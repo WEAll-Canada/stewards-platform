@@ -32,9 +32,9 @@ The client's entire interaction is talking to the agent; the agent runs every co
 
 **One-time setup** (with operator help):
 
-1. Install Git, Node (version in `.nvmrc`), GitHub CLI, and one agent app, from links in `SETUP.md`.
+1. Install one agent app (plus Git on Windows), from links in `SETUP.md`.
 2. Open the repo folder in the agent and say "get me set up."
-3. The agent runs the doctor check and reports anything missing in plain language, without installing system tools.
+3. The agent runs `scripts/setup-tools.sh` (Mac) or `setup-tools.ps1` (Windows), which installs pinned, checksum-verified Node and GitHub CLI into the user's folder without admin rights (on a Mac it also triggers Apple's Git install), then the doctor check. No system-wide installs.
 4. The agent runs `gh auth login --web` and `gh auth setup-git`; the client clicks Authorize in the browser.
 5. If Git identity is missing, the agent asks for name and email and sets them with `git config --local`.
 
@@ -93,14 +93,14 @@ All scripts are Node `.mjs` files so they behave the same on macOS and Windows, 
 
 | Script | Does | Must refuse or stop when |
 | --- | --- | --- |
-| `doctor` | Checks Git, Node version against `.nvmrc`, GitHub CLI, `gh` auth, Git identity, `node_modules` | Never installs anything; reports MISSING / WRONG VERSION with a link |
+| `doctor` | Checks Git, Node version against `.nvmrc`, GitHub CLI, `gh` auth, Git identity, `node_modules` | Never installs anything; reports MISSING / WRONG VERSION and points to the setup script |
 | `start` | Runs doctor, `npm ci` if needed, switches to and pulls `staging`, starts the dev server, prints the local URL | Doctor fails; uncommitted changes would be lost by switching |
 | `ship` | Builds, runs tests, commits with the given summary, pulls with rebase, pushes `staging`, prints the staging URL | Not on `staging`; build or tests fail; conflict (aborts the rebase, restores files) |
 | `sync` | Pulls the latest `staging` | Conflict (aborts and restores) |
 | `undo` | Discards uncommitted changes, or reverts the last shipped commit with a new commit | Never rewrites history |
 | `test` | Runs Playwright tests against a local build | — |
 
-A `doctor` twin in plain shell (`scripts/check.sh`, plus `check.ps1` for Windows) covers the case where Node itself is missing.
+A `doctor` twin in plain shell (`scripts/check.sh`, plus `check.ps1` for Windows) covers the case where Node itself is missing. `scripts/setup-tools.sh` and `setup-tools.ps1` install missing Node and GitHub CLI: exact pinned versions from nodejs.org and github.com, SHA-256 verified, unpacked into the user's folder and added to the user's PATH. They are the only install path agents may use.
 
 ### Agent rules (AGENTS.md)
 
@@ -197,7 +197,7 @@ AGENTS.md is guidance, not enforcement, so every important rule has a hard backs
 | Destructive schema change hits production data | Never edit old migrations; prefer additive changes | `migrations/` is CODEOWNERS-owned; production migrations run only after approval; export the production D1 database before applying |
 | Staging corrupts production data | — | Separate D1 databases per environment; no production bindings in `env.staging` |
 | Free-tier limit takes the site down | Index every filtered column | Per-client Cloudflare accounts; upgrade path to Workers Paid |
-| Agent installs system software | Never install; report via doctor | `.claude/settings.json` deny list; per-user approval settings in other tools |
+| Agent installs system software | Never install system-wide; only the pinned, checksum-verified setup script installs, and only into the user's folder | `.claude/settings.json` deny list; per-user approval settings in other tools |
 | History rewritten or work lost | No force-push, reset, or rebase | Scripts never force-push; `undo` uses revert |
 | Test weakened to pass | Fix the site, not the test | Operator reviews `tests/` diffs on every production PR |
 | Cloudflare credentials or app secrets leak | Never print `.dev.vars` | Token only in GitHub Environments; app secrets set per environment with `wrangler secret put` |

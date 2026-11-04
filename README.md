@@ -8,7 +8,7 @@ Built on Astro + Cloudflare Workers + D1, on each client's free Cloudflare accou
 
 ### I'm a client editing my site
 
-1. Follow **[SETUP.md](SETUP.md)** once to install four apps (about 20 minutes).
+1. Follow **[SETUP.md](SETUP.md)** once: install an AI assistant app (plus Git on Windows), and it sets up the rest (about 10 minutes).
 2. Open your site's folder in your AI assistant and say **"get me set up"**.
 3. From then on, say **"start the site"**, describe your changes, and say **"ship it"** when you're happy.
 
@@ -26,7 +26,7 @@ npm run start      # doctor check, local database + sample data, preview at http
 npm run test       # Playwright tests against a local build
 ```
 
-Requires Git, Node 24 (see `.nvmrc`), and the GitHub CLI. `npm run doctor` checks all three.
+Requires Git, Node 24 (see `.nvmrc`), and the GitHub CLI. `npm run doctor` checks all three; `sh scripts/setup-tools.sh` (Mac) or `scripts\setup-tools.ps1` (Windows) installs pinned, checksum-verified Node and GitHub CLI into your user folder without admin rights.
 
 ## How it works
 

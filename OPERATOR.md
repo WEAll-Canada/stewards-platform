@@ -123,6 +123,20 @@ gh api -X POST repos/OWNER/REPO/rulesets --input .github/rulesets/protect-automa
 3. Review the diff. Look hardest at `migrations/` (anything destructive?) and `tests/` (was any test weakened?).
 4. Merge, then approve the production deploy (Actions tab → the Deploy run → Review deployments). It backs up the database (kept 90 days as a workflow artifact named `d1-backup-<commit>`), applies migrations, then deploys.
 
+## Updating the pinned tools
+
+`scripts/setup-tools.sh` (Mac) and `scripts/setup-tools.ps1` (Windows) install exact versions of Node and the GitHub CLI and refuse any download whose SHA-256 doesn't match. They only install a tool that's missing, or a Node whose major version doesn't match `.nvmrc`, so an older pin keeps working; update a few times a year, or sooner for a Node security release.
+
+1. Get the new versions and checksums from the official lists:
+   ```sh
+   curl -fsSL https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt | grep -E 'darwin-(arm64|x64)\.tar\.gz|win-(x64|arm64)\.zip'
+   V=$(gh release view -R cli/cli --json tagName -q .tagName | sed 's/^v//')
+   curl -fsSL "https://github.com/cli/cli/releases/download/v$V/gh_${V}_checksums.txt" | grep -E '(macOS|windows)_(amd64|arm64)\.zip'
+   ```
+2. Update `NODE_VERSION`, `GH_VERSION` and the four checksums in **both** scripts.
+3. Test on a Mac with an empty home folder: `HOME=$(mktemp -d) PATH=/usr/bin:/bin sh scripts/setup-tools.sh`, which should download both and say RESTART NEEDED. Test the Windows script on a Windows account.
+4. When `.nvmrc` moves to a new Node major, change the `latest-v24.x` URL above to match; both scripts refuse to run while their pinned Node disagrees with `.nvmrc`.
+
 ## Restoring the production database from a backup
 
 Download the `d1-backup-<commit>` artifact from that deploy's Actions run, then:

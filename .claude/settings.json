@@ -3,6 +3,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run doctor)",
+      "Bash(sh scripts/setup-tools.sh)",
+      "Bash(sh scripts/check.sh)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/setup-tools.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/check.ps1)",
       "Bash(npm run start)",
       "Bash(npm run ship *)",
       "Bash(npm run sync)",
