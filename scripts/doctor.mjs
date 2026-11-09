@@ -46,7 +46,7 @@ function checkGit() {
 function checkNode() {
   const need = requiredNodeMajor();
   const have = process.versions.node;
-  if (Number.parseInt(have, 10) !== need) {
+  if (Number.parseInt(have, 10) < need) {
     return fail(
       "Node",
       `WRONG VERSION. You have ${have}, this site needs version ${need}. ${INSTALL_FIX}`,
