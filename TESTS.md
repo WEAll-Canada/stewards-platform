@@ -22,3 +22,7 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] An admin can add an FAQ item. (tests/stewards-platform.spec.ts)
 - [auto] Join/apply requires the Connect welcome survey fields (profile type, contact, regions, sector, interests, charter). (tests/stewards-auth.spec.ts)
 - [auto] Signed-in header uses an account name menu; Profile and Settings are tabs on one page. (tests/stewards-platform.spec.ts)
+- [auto] Circles header lists the steward’s circles; circle detail pages open; dashboard shows events today and upcoming. (tests/stewards-platform.spec.ts)
+- [auto] Events page offers list/calendar views and keeps the add-event form collapsed by default. (tests/stewards-platform.spec.ts)
+- [auto] Directory search and sector filter return matching stewards. (tests/stewards-platform.spec.ts)
+- [auto] Migrating steward can activate with a short form; admin sees an Activation badge. (tests/stewards-auth.spec.ts)

@@ -1,28 +1,99 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
-import { listConnectionsFor, listDirectoryStewards } from "../../lib/db";
+import {
+  listConnectionsFor,
+  listDirectoryFilterOptions,
+  listDirectoryStewards,
+} from "../../lib/db";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
-const stewards = await listDirectoryStewards();
+const params = Astro.url.searchParams;
+const filters = {
+  q: params.get("q") ?? "",
+  region: params.get("region") ?? "",
+  sector: params.get("sector") ?? "",
+  interest: params.get("interest") ?? "",
+};
+const hasFilters = Boolean(filters.q || filters.region || filters.sector || filters.interest);
+
+const stewards = await listDirectoryStewards(filters);
+const options = await listDirectoryFilterOptions();
 const connections = await listConnectionsFor(user.id);
+
+function interestList(raw: string) {
+  return (raw || "").split("|").filter(Boolean).join(" · ");
+}
 ---
 <Base title="Directory" active="directory" user={user}>
   <h1>Alliance directory</h1>
-  <p class="lede">Stewards who chose to appear in the directory. Log connection strength or send a message.</p>
+  <p class="lede">Find stewards by name, region, sector, or interest — then connect or message.</p>
+
+  <form class="dir-filters" method="get" action="/stewards/directory" role="search">
+    <label class="dir-filters__search">
+      Search
+      <input type="search" name="q" value={filters.q} placeholder="Name, org, place…" maxlength="100" />
+    </label>
+    <label>
+      Region
+      <select name="region">
+        <option value="">All regions</option>
+        {options.regions.map((r) => (
+          <option value={r} selected={filters.region === r}>{r}</option>
+        ))}
+      </select>
+    </label>
+    <label>
+      Sector
+      <select name="sector">
+        <option value="">All sectors</option>
+        {options.sectors.map((s) => (
+          <option value={s} selected={filters.sector === s}>{s}</option>
+        ))}
+      </select>
+    </label>
+    <label>
+      Interest
+      <select name="interest">
+        <option value="">All interests</option>
+        {options.interests.map((i) => (
+          <option value={i} selected={filters.interest === i}>{i}</option>
+        ))}
+      </select>
+    </label>
+    <div class="dir-filters__actions">
+      <button class="btn btn--primary" type="submit">Filter</button>
+      {hasFilters && (
+        <a class="btn btn--quiet" href="/stewards/directory">Clear</a>
+      )}
+    </div>
+  </form>
+
+  <p class="dir-count" aria-live="polite">
+    {stewards.length === 0
+      ? "No stewards match these filters."
+      : `${stewards.length} steward${stewards.length === 1 ? "" : "s"}`}
+  </p>
 
   {stewards.length === 0 ? (
-    <p class="note">No directory profiles yet.</p>
+    <p class="note">
+      {hasFilters
+        ? "Try clearing a filter or searching a different name."
+        : "No directory profiles yet."}
+    </p>
   ) : (
     <ul class="dir-list">
       {stewards.map((s) => (
         <li data-id={s.id}>
           <strong>{s.display_name || "Steward"}</strong>
           {s.partner_org && <span class="org"> · {s.partner_org}</span>}
-          {s.location && <div class="meta">{s.location}</div>}
+          <div class="meta">
+            {[s.regions || s.location, s.sector].filter(Boolean).join(" · ")}
+          </div>
+          {s.interests && <div class="meta interests">{interestList(s.interests)}</div>}
           {s.bio && <p>{s.bio}</p>}
           {s.id !== user.id && (
             <div class="dir-actions">
@@ -69,10 +140,36 @@ const connections = await listConnectionsFor(user.id);
 </Base>
 
 <style>
+  .dir-filters {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr auto;
+    gap: var(--space-3);
+    align-items: end;
+    margin: var(--space-6) 0 var(--space-4);
+    padding-bottom: var(--space-6);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .dir-filters label {
+    margin: 0;
+  }
+
+  .dir-filters__actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .dir-count {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-4);
+  }
+
   .dir-list {
     list-style: none;
     padding: 0;
-    margin: var(--space-6) 0 0;
+    margin: 0;
     display: grid;
     gap: var(--space-4);
   }
@@ -88,6 +185,10 @@ const connections = await listConnectionsFor(user.id);
     font-size: var(--text-sm);
   }
 
+  .interests {
+    margin-top: 0.15rem;
+  }
+
   .dir-actions {
     display: flex;
     flex-wrap: wrap;
@@ -100,16 +201,29 @@ const connections = await listConnectionsFor(user.id);
     font-size: var(--text-sm);
   }
 
-  select {
+  select,
+  input[type="search"] {
     font: inherit;
     padding: 0.4rem 0.5rem;
     border-radius: var(--radius-md);
     border: 1px solid var(--color-surface-subtle);
+    width: 100%;
   }
 
   h2 {
     margin-top: var(--space-8);
     font-size: var(--text-lg);
+  }
+
+  @media (max-width: 900px) {
+    .dir-filters {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .dir-filters__search,
+    .dir-filters__actions {
+      grid-column: 1 / -1;
+    }
   }
 </style>
 

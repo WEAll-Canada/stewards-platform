@@ -114,17 +114,13 @@ Adjust dates when sample-repo porting or architecture PDF reconciliation changes
 
 ## Backlog notes (not building yet)
 
-- **Activate your account (nav):** Third public header option alongside “Apply to join” and “Login”, for people migrating from the old platform. Link goes straight to a dedicated activation path with onboarding tailored to existing accounts (not the new-applicant survey). Product feedback 2026-11-12.
+- [x] **Activate your account (nav):** Third public header option + `/stewards/activate` short path for migrating stewards (not the full survey); admins see an Activation badge. Product feedback 2026-11-12 — done 2026-11-12.
 - **Google OAuth on Apply + Login:** Offer “Continue with Google” on both the Join/Connect front door and Login once OAuth client secrets are in place (already partially scaffolded; login button currently disabled until keys exist). Product feedback 2026-11-12.
 - **Dashboard layout:** Tiles may later move toward a fuller bento composition; for now prefer editorial / non-template tile treatments over generic accent-bar cards. Product feedback 2026-11-12.
-- **Circles header hover dropdown:** On mouseover of “Circles” in the top header, show a dropdown of the circle names the signed-in user belongs to; each name links into that circle’s full-screen view. This is a shortcut for people who already know where they’re going. Primary path remains the dashboard home base, where each circle appears as its own panel with highlights/updates, and clicking the circle name opens the same full-screen circle experience. Product feedback 2026-11-12.
-- **Directory search & filter (later pass):** Add search and filter on the directory page so stewards can find people by name, region, sector, interests, etc. Captured while reviewing the directory; defer until after core directory/connect flows feel solid. Product feedback 2026-11-12.
-- **Events (later pass) — product feedback 2026-11-12:**
-  - Add a **calendar view** alongside the existing upcoming-events list on the events page.
-  - Revisit events functionality against **STEWARD_PRD** and fold in the fuller feature set described there.
-  - Reconsider the events page **layout for maximum user-friendliness**, with emphasis on highlighting **current / ongoing** events.
-  - **Dashboard integration:** show **events today** on the dashboard, plus an **upcoming** section with the **next five** events.
-  - **Add-event UX:** collapse/hide the add-event field by default; keep it at the **bottom** of the page and only expand when the user clicks to add an event.
+- [x] **Circles header hover dropdown** + circle detail pages (`/stewards/circles/[slug]`). Product feedback 2026-11-12 — done 2026-11-12.
+- [x] **Directory search & filter:** Search plus region/sector/interest filters on the directory. Product feedback 2026-11-12 — done 2026-11-12.
+- [x] **Events UX pass (product feedback 2026-11-12):** list/calendar toggle, happening-now + today emphasis, collapsed add-event form at bottom, dashboard “Events today” + next five upcoming — done 2026-11-12.
+- **Events (later):** fuller STEWARD_PRD calendar features (subscribe, richer RSVP/attendance, circle meeting tooling).
 
 ## README pointer
 

@@ -3,13 +3,19 @@ import Base from "../../layouts/Base.astro";
 import WeAllCircle from "../../components/WeAllCircle.astro";
 import { currentUser } from "../../lib/auth";
 import { listEventsForUser, listUserCircles } from "../../lib/db";
+import { isToday, isUpcoming } from "../../lib/events";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
 const circles = await listUserCircles(user.id);
-const upcoming = (await listEventsForUser(user.id)).slice(0, 3);
+const allEvents = await listEventsForUser(user.id);
+const now = new Date();
+const todayEvents = allEvents.filter((e) => isToday(e, now));
+const upcoming = allEvents
+  .filter((e) => isUpcoming(e, now.getTime()) && !isToday(e, now))
+  .slice(0, 5);
 const variant = (token: string) =>
   (["central", "knowledge", "policy", "liberating", "grassroots"].includes(token)
     ? token
@@ -45,7 +51,7 @@ const variant = (token: string) =>
             <li>
               <WeAllCircle variant={variant(c.color_token)} size={28} animate={false} />
               <div>
-                <a href="/stewards/circles">{c.name}</a>
+                <a href={`/stewards/circles/${c.slug}`}>{c.name}</a>
                 <div class="meta">{c.role}</div>
               </div>
             </li>
@@ -62,9 +68,28 @@ const variant = (token: string) =>
     </section>
 
     <section class="dash-block dash-block--wide">
+      <h2>Events today</h2>
+      {todayEvents.length === 0 ? (
+        <p>Nothing on the calendar today. <a href="/stewards/events">See all events</a>.</p>
+      ) : (
+        <ul class="event-list">
+          {todayEvents.map((e) => (
+            <li>
+              <time datetime={e.starts_at}>{e.starts_at.slice(11, 16)} UTC</time>
+              <div>
+                <a href="/stewards/events">{e.title}</a>
+                {e.circle_name && <div class="meta">{e.circle_name}</div>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+
+    <section class="dash-block dash-block--wide">
       <h2>Upcoming</h2>
       {upcoming.length === 0 ? (
-        <p>No events yet. <a href="/stewards/events">See calendar</a>.</p>
+        <p>No upcoming events yet. <a href="/stewards/events">See calendar</a>.</p>
       ) : (
         <ul class="event-list">
           {upcoming.map((e) => (

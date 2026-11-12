@@ -13,6 +13,18 @@ WHERE user_id = 1;
 
 UPDATE profiles SET
   profile_type = 'steward',
+  contact_links = 'pending@weallcanada.local',
+  regions = 'Ontario',
+  map_address = 'Toronto',
+  sector = 'NGO',
+  sector_other = '',
+  interests = 'Housing|Climate',
+  interest_other = '',
+  about = 'Waiting for approval on the Stewards Platform.'
+WHERE user_id = 2;
+
+UPDATE profiles SET
+  profile_type = 'steward',
   contact_links = 'alex@weallcanada.local · https://example.com',
   regions = 'Quebec',
   map_address = 'Montreal',
@@ -21,7 +33,7 @@ UPDATE profiles SET
   interests = 'Climate|Justice & Equity|Food & Agriculture',
   interest_other = '',
   about = 'Sample steward for local testing.'
-WHERE user_id = 2;
+WHERE user_id = 3;
 
 -- Operator test account (staging apply + local if present): circles + RSVP for dashboard testing.
 INSERT OR IGNORE INTO circle_members (circle_id, user_id, role)

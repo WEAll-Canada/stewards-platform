@@ -24,7 +24,7 @@ const variant = (token: string) =>
         <div class="circle-card__top">
           <WeAllCircle variant={variant(c.color_token)} size={32} animate={false} />
           <div>
-            <strong>{c.name}</strong>
+            <strong><a href={`/stewards/circles/${c.slug}`}>{c.name}</a></strong>
             {c.status === "dormant" && <span class="meta"> · dormant</span>}
             <div class="meta">{c.member_count} members</div>
           </div>

@@ -27,8 +27,10 @@ function interestList(raw: string) {
         <li class="app-card" data-kind="application" data-id={app.id}>
           <div>
             <strong>{app.display_name || "Applicant"}</strong>
+            {app.source === "activate" && <span class="badge">Activation</span>}
             <div class="meta">
-              {app.email} · {app.profile_type === "partner" ? "Partner" : "Steward"} · applied {app.created_at.slice(0, 10)}
+              {app.email} · {app.profile_type === "partner" ? "Partner" : "Steward"}
+              {app.source === "activate" ? " · activating" : " · applied"} {app.created_at.slice(0, 10)}
             </div>
             {app.contact_links && <p><strong>Contact:</strong> {app.contact_links}</p>}
             {app.regions && <p><strong>Location:</strong> {app.regions}</p>}
@@ -106,6 +108,21 @@ function interestList(raw: string) {
     color: var(--color-muted);
     font-size: var(--text-sm);
     margin: var(--space-1) 0 var(--space-2);
+  }
+
+  .badge {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-subtle);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-blue);
+    vertical-align: middle;
   }
 
   .app-actions {

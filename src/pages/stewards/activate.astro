@@ -1,0 +1,137 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { turnstileSiteKey } from "../../lib/protect";
+
+const user = await currentUser(Astro.request);
+if (user?.status === "active") {
+  return Astro.redirect("/stewards/dashboard");
+}
+if (user?.status === "applicant") {
+  return Astro.redirect("/stewards/pending");
+}
+
+const siteKey = turnstileSiteKey();
+---
+<Base title="Activate your account" active="activate" user={user}>
+  <h1>Activate your account</h1>
+  <p class="lede">
+    Already part of WEAll Canada from the earlier platform? Set up your Stewards Platform login here —
+    a short activation, not the full new-member survey.
+  </p>
+
+  <ul class="invite-list">
+    <li>Use the email you want for alliance sign-in going forward</li>
+    <li>An admin confirms your activation before full access</li>
+    <li>After approval you can finish your profile and join circles</li>
+  </ul>
+
+  <form id="activate-form" class="stack">
+    <label>
+      Full name
+      <input type="text" name="name" autocomplete="name" required maxlength="100" />
+    </label>
+    <label>
+      Email
+      <input type="email" name="email" autocomplete="email" required maxlength="200" placeholder="you@example.com" />
+    </label>
+    <label>
+      Create a password
+      <input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" />
+    </label>
+    <label>
+      Anything we should know? <span class="optional">(optional)</span>
+      <span class="hint">Eg: previous circle roles, old login email, or how you’ve been involved.</span>
+      <textarea name="note" rows="3" maxlength="2000"></textarea>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="confirm_existing" required />
+      I already participated in WEAll Canada and want to activate on this new platform
+    </label>
+    <label class="check">
+      <input type="checkbox" name="charter_agreed" required />
+      I agree to the <a href="https://weallcanada.org/" target="_blank" rel="noreferrer">Living Charter</a>
+    </label>
+    {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
+    <button class="btn btn--accent" type="submit">Activate account</button>
+    <p id="form-status" role="status"></p>
+  </form>
+
+  <p class="note" style="margin-top: 1.5rem;">
+    New to WEAll Canada? <a href="/stewards/apply">Apply to join</a> instead.
+    Already activated? <a href="/stewards/login">Login</a>.
+  </p>
+</Base>
+
+{siteKey && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+
+<style>
+  .invite-list {
+    margin: 0 0 var(--space-6);
+    padding-left: 1.25rem;
+    max-width: 40rem;
+    color: var(--color-ink-soft);
+  }
+
+  .invite-list li {
+    margin-bottom: var(--space-2);
+  }
+
+  .hint {
+    display: block;
+    font-weight: 400;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .optional {
+    font-weight: 400;
+    color: var(--color-muted);
+  }
+
+  .check {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+    font-weight: 400;
+  }
+
+  .check input {
+    margin-top: 0.25rem;
+  }
+
+  .stack {
+    max-width: 28rem;
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#activate-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Activating…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: fields.get("name"),
+        email: fields.get("email"),
+        password: fields.get("password"),
+        note: fields.get("note"),
+        confirm_existing: fields.get("confirm_existing") === "on",
+        charter_agreed: fields.get("charter_agreed") === "on",
+        turnstileToken: fields.get("cf-turnstile-response"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.href = data.redirect ?? "/stewards/pending";
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+    (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
+  });
+</script>

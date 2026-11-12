@@ -1,5 +1,6 @@
 ---
 import type { StewardUser } from "../lib/db";
+import { listUserCircles } from "../lib/db";
 import "../styles/tokens.css";
 import SiteHeader from "../components/SiteHeader.astro";
 
@@ -12,6 +13,8 @@ interface Props {
 
 const { title, active, showHeader = true, user = null } = Astro.props;
 const fullTitle = title.includes("WeAll") ? title : `${title} · WeAll Canada Stewards`;
+const userCircles =
+  user?.status === "active" ? await listUserCircles(user.id) : [];
 ---
 <!doctype html>
 <html lang="en">
@@ -29,7 +32,7 @@ const fullTitle = title.includes("WeAll") ? title : `${title} · WeAll Canada St
     <title>{fullTitle}</title>
   </head>
   <body>
-    {showHeader && <SiteHeader active={active} user={user} />}
+    {showHeader && <SiteHeader active={active} user={user} userCircles={userCircles} />}
     <main>
       <slot />
     </main>

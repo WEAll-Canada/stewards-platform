@@ -117,6 +117,77 @@ test("steward can RSVP to an event", async ({ request }) => {
   expect(res.status()).toBe(200);
 });
 
+test("circles nav lists memberships and circle detail pages open", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const dash = await request.get("/stewards/dashboard", { headers: { cookie } });
+  expect(dash.status()).toBe(200);
+  const html = await dash.text();
+  expect(html).toContain('data-circles-nav');
+  expect(html).toMatch(/\/stewards\/circles\/[a-z0-9-]+/);
+  expect(html).toContain("Events today");
+  expect(html).toContain("Upcoming");
+
+  const circle = await request.get("/stewards/circles/central", { headers: { cookie } });
+  expect(circle.status()).toBe(200);
+  const circleHtml = await circle.text();
+  expect(circleHtml).toContain("Central Circle");
+  expect(circleHtml).toContain("Members");
+});
+
+test("directory supports search and sector filter", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  // Keep this test self-contained — other tests may have changed Alex's sector.
+  const prep = await request.post("/api/profile", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      display_name: "Alex Steward",
+      bio: "Sample active steward in the directory.",
+      location: "Montreal",
+      partner_org: "Local hub",
+      visibility: "stewards",
+      allow_directory: true,
+      allow_messages: true,
+      email_updates: true,
+      profile_type: "steward",
+      contact_links: "alex@weallcanada.local",
+      regions: "Quebec",
+      map_address: "",
+      sector: "NGO",
+      sector_other: "",
+      interests: ["Climate", "Justice & Equity", "Food & Agriculture"],
+      interest_other: "",
+      about: "Sample steward for local testing.",
+    },
+  });
+  expect(prep.status()).toBe(200);
+
+  const all = await request.get("/stewards/directory", { headers: { cookie } });
+  expect(all.status()).toBe(200);
+  const allHtml = await all.text();
+  expect(allHtml).toContain('name="q"');
+  expect(allHtml).toContain('name="sector"');
+  expect(allHtml).toContain("Alex Steward");
+
+  const filtered = await request.get("/stewards/directory?q=Alex&sector=NGO", { headers: { cookie } });
+  expect(filtered.status()).toBe(200);
+  const filteredHtml = await filtered.text();
+  expect(filteredHtml).toContain("Alex Steward");
+  expect(filteredHtml).toContain("Quebec");
+  expect(filteredHtml).toMatch(/1 steward/);
+});
+
+test("events page has list/calendar views and collapsed add form", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const res = await request.get("/stewards/events", { headers: { cookie } });
+  expect(res.status()).toBe(200);
+  const html = await res.text();
+  expect(html).toContain('data-view="list"');
+  expect(html).toContain('data-view="calendar"');
+  expect(html).toContain("data-add-event");
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).toContain("Add an event");
+});
+
 test("admin can add an FAQ item", async ({ request }) => {
   const cookie = await login(request, "admin@weallcanada.local");
   const res = await request.post("/api/faq", {

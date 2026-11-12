@@ -37,6 +37,7 @@ export interface ApplicationRow {
   interest_other: string;
   about: string;
   charter_agreed: number;
+  source: "apply" | "activate";
 }
 
 export async function listMessages(limit = 50): Promise<Message[]> {
@@ -147,7 +148,9 @@ export async function createApplicant(input: {
   interest_other: string;
   about: string;
   charter_agreed: boolean;
+  source?: "apply" | "activate";
 }): Promise<{ userId: number; applicationId: number }> {
+  const source = input.source ?? "apply";
   const user = await env.DB.prepare(
     `INSERT INTO users (email, password_hash, status)
      VALUES (?, ?, 'applicant')
@@ -184,8 +187,8 @@ export async function createApplicant(input: {
   const application = await env.DB.prepare(
     `INSERT INTO applications (
        user_id, why, status, profile_type, contact_links, regions, map_address,
-       sector, sector_other, interests, interest_other, about, charter_agreed
-     ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       sector, sector_other, interests, interest_other, about, charter_agreed, source
+     ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
     .bind(
@@ -201,6 +204,7 @@ export async function createApplicant(input: {
       input.interest_other,
       input.about,
       input.charter_agreed ? 1 : 0,
+      source,
     )
     .first<{ id: number }>();
   if (!application) throw new Error("Could not create application");
@@ -212,12 +216,12 @@ export async function listPendingApplications(): Promise<ApplicationRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.user_id, a.why, a.status, a.created_at, u.email, p.display_name,
             a.profile_type, a.contact_links, a.regions, a.map_address, a.sector, a.sector_other,
-            a.interests, a.interest_other, a.about, a.charter_agreed
+            a.interests, a.interest_other, a.about, a.charter_agreed, a.source
      FROM applications a
      JOIN users u ON u.id = a.user_id
      LEFT JOIN profiles p ON p.user_id = u.id
      WHERE a.status = 'pending'
-     ORDER BY a.created_at ASC, a.id ASC`,
+     ORDER BY CASE a.source WHEN 'activate' THEN 0 ELSE 1 END, a.created_at ASC, a.id ASC`,
   ).all<ApplicationRow>();
   return results;
 }
@@ -294,18 +298,96 @@ export async function getSessionUser(sessionId: string): Promise<StewardUser | n
   return hydrateUser(row);
 }
 
-export async function listDirectoryStewards(): Promise<
-  { id: number; display_name: string; bio: string; location: string; partner_org: string }[]
-> {
-  const { results } = await env.DB.prepare(
-    `SELECT u.id, p.display_name, p.bio, p.location, p.partner_org
+export type DirectorySteward = {
+  id: number;
+  display_name: string;
+  bio: string;
+  location: string;
+  partner_org: string;
+  regions: string;
+  sector: string;
+  interests: string;
+};
+
+export type DirectoryFilters = {
+  q?: string;
+  region?: string;
+  sector?: string;
+  interest?: string;
+};
+
+export async function listDirectoryStewards(filters: DirectoryFilters = {}): Promise<DirectorySteward[]> {
+  const clauses = [
+    "u.status = 'active'",
+    "pref.allow_directory = 1",
+    "p.visibility != 'private'",
+  ];
+  const binds: (string | number)[] = [];
+
+  const q = filters.q?.trim();
+  if (q) {
+    clauses.push(
+      `(p.display_name LIKE ? OR p.bio LIKE ? OR p.partner_org LIKE ? OR p.location LIKE ? OR p.regions LIKE ?)`,
+    );
+    const like = `%${q}%`;
+    binds.push(like, like, like, like, like);
+  }
+  const region = filters.region?.trim();
+  if (region) {
+    clauses.push(`p.regions LIKE ?`);
+    binds.push(`%${region}%`);
+  }
+  const sector = filters.sector?.trim();
+  if (sector) {
+    clauses.push(`p.sector = ?`);
+    binds.push(sector);
+  }
+  const interest = filters.interest?.trim();
+  if (interest) {
+    clauses.push(`('|' || p.interests || '|') LIKE ?`);
+    binds.push(`%|${interest}|%`);
+  }
+
+  const stmt = env.DB.prepare(
+    `SELECT u.id, p.display_name, p.bio, p.location, p.partner_org, p.regions, p.sector, p.interests
      FROM users u
      JOIN profiles p ON p.user_id = u.id
      JOIN preferences pref ON pref.user_id = u.id
-     WHERE u.status = 'active' AND pref.allow_directory = 1 AND p.visibility != 'private'
+     WHERE ${clauses.join(" AND ")}
      ORDER BY p.display_name COLLATE NOCASE ASC`,
-  ).all<{ id: number; display_name: string; bio: string; location: string; partner_org: string }>();
+  );
+  const { results } = binds.length ? await stmt.bind(...binds).all<DirectorySteward>() : await stmt.all<DirectorySteward>();
   return results;
+}
+
+export async function listDirectoryFilterOptions(): Promise<{
+  regions: string[];
+  sectors: string[];
+  interests: string[];
+}> {
+  const { results } = await env.DB.prepare(
+    `SELECT p.regions, p.sector, p.interests
+     FROM users u
+     JOIN profiles p ON p.user_id = u.id
+     JOIN preferences pref ON pref.user_id = u.id
+     WHERE u.status = 'active' AND pref.allow_directory = 1 AND p.visibility != 'private'`,
+  ).all<{ regions: string; sector: string; interests: string }>();
+
+  const regions = new Set<string>();
+  const sectors = new Set<string>();
+  const interests = new Set<string>();
+  for (const row of results) {
+    if (row.regions?.trim()) regions.add(row.regions.trim());
+    if (row.sector?.trim()) sectors.add(row.sector.trim());
+    for (const part of (row.interests || "").split("|")) {
+      if (part.trim()) interests.add(part.trim());
+    }
+  }
+  return {
+    regions: [...regions].sort((a, b) => a.localeCompare(b)),
+    sectors: [...sectors].sort((a, b) => a.localeCompare(b)),
+    interests: [...interests].sort((a, b) => a.localeCompare(b)),
+  };
 }
 
 export interface ProfileBundle {
@@ -788,33 +870,70 @@ export async function listCampaigns(): Promise<
   return results;
 }
 
-export async function listUserCircles(userId: number): Promise<{ name: string; color_token: string; role: string }[]> {
+export async function listUserCircles(
+  userId: number,
+): Promise<{ id: number; slug: string; name: string; color_token: string; role: string }[]> {
   const { results } = await env.DB.prepare(
-    `SELECT c.name, c.color_token, cm.role
+    `SELECT c.id, c.slug, c.name, c.color_token, cm.role
      FROM circle_members cm
      JOIN circles c ON c.id = cm.circle_id
      WHERE cm.user_id = ?
      ORDER BY c.name COLLATE NOCASE`,
   )
     .bind(userId)
-    .all<{ name: string; color_token: string; role: string }>();
+    .all<{ id: number; slug: string; name: string; color_token: string; role: string }>();
   return results;
 }
 
-export async function listEventsForUser(userId: number): Promise<
-  {
-    id: number;
-    title: string;
-    description: string;
-    starts_at: string;
-    location: string;
-    visibility: string;
-    circle_name: string | null;
-    rsvp: string | null;
-  }[]
-> {
+export async function getCircleBySlug(slug: string, userId: number): Promise<CircleRow | null> {
+  return (
+    (await env.DB.prepare(
+      `SELECT c.id, c.slug, c.name, c.color_token, c.status, c.description,
+              (SELECT COUNT(*) FROM circle_members cm2 WHERE cm2.circle_id = c.id) AS member_count,
+              cm.role AS membership,
+              CASE WHEN jr.id IS NULL THEN 0 ELSE 1 END AS pending_request
+       FROM circles c
+       LEFT JOIN circle_members cm ON cm.circle_id = c.id AND cm.user_id = ?
+       LEFT JOIN circle_join_requests jr
+         ON jr.circle_id = c.id AND jr.user_id = ? AND jr.status = 'pending'
+       WHERE c.slug = ?`,
+    )
+      .bind(userId, userId, slug)
+      .first<CircleRow>()) ?? null
+  );
+}
+
+export async function listCircleMembers(
+  circleId: number,
+): Promise<{ user_id: number; display_name: string; role: string }[]> {
   const { results } = await env.DB.prepare(
-    `SELECT e.id, e.title, e.description, e.starts_at, e.location, e.visibility,
+    `SELECT cm.user_id, COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name, cm.role
+     FROM circle_members cm
+     JOIN users u ON u.id = cm.user_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE cm.circle_id = ?
+     ORDER BY CASE cm.role WHEN 'lead' THEN 0 ELSE 1 END, display_name COLLATE NOCASE`,
+  )
+    .bind(circleId)
+    .all<{ user_id: number; display_name: string; role: string }>();
+  return results;
+}
+
+export type EventRow = {
+  id: number;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string;
+  visibility: string;
+  circle_name: string | null;
+  rsvp: string | null;
+};
+
+export async function listEventsForUser(userId: number): Promise<EventRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT e.id, e.title, e.description, e.starts_at, e.ends_at, e.location, e.visibility,
             c.name AS circle_name, r.status AS rsvp
      FROM events e
      LEFT JOIN circles c ON c.id = e.circle_id
@@ -826,16 +945,7 @@ export async function listEventsForUser(userId: number): Promise<
      ORDER BY e.starts_at ASC`,
   )
     .bind(userId, userId)
-    .all<{
-      id: number;
-      title: string;
-      description: string;
-      starts_at: string;
-      location: string;
-      visibility: string;
-      circle_name: string | null;
-      rsvp: string | null;
-    }>();
+    .all<EventRow>();
   return results;
 }
 
@@ -843,20 +953,22 @@ export async function createEvent(input: {
   title: string;
   description: string;
   startsAt: string;
+  endsAt: string | null;
   location: string;
   visibility: "public" | "stewards" | "circle";
   circleId: number | null;
   createdBy: number;
 }): Promise<number> {
   const row = await env.DB.prepare(
-    `INSERT INTO events (title, description, starts_at, location, visibility, circle_id, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO events (title, description, starts_at, ends_at, location, visibility, circle_id, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
     .bind(
       input.title,
       input.description,
       input.startsAt,
+      input.endsAt,
       input.location,
       input.visibility,
       input.circleId,

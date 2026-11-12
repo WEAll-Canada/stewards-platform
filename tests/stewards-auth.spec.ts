@@ -81,3 +81,53 @@ test("admin can approve a pending application", async ({ request }) => {
   expect(stewardLogin.status()).toBe(200);
   expect((await stewardLogin.json()).redirect).toBe("/stewards/dashboard");
 });
+
+test("migrating steward can activate without the full survey", async ({ request }) => {
+  const email = `activate-${Date.now()}@example.com`;
+  const landing = await request.get("/stewards/login");
+  expect(landing.status()).toBe(200);
+  const landingHtml = await landing.text();
+  expect(landingHtml).toContain("/stewards/activate");
+  expect(landingHtml).toContain("Activate your account");
+
+  const activated = await request.post("/api/activate", {
+    headers: asVisitor(),
+    data: {
+      name: "Returning Steward",
+      email,
+      password: "password123",
+      note: "Was in Central Circle on the old site.",
+      confirm_existing: true,
+      charter_agreed: true,
+      turnstileToken: TOKEN,
+    },
+  });
+  expect(activated.status()).toBe(201);
+  const { applicationId } = await activated.json();
+  expect(applicationId).toBeTruthy();
+
+  const cookie = activated.headers()["set-cookie"]?.split(";")[0] ?? "";
+  const pending = await request.get("/stewards/pending", { headers: { cookie } });
+  expect(pending.status()).toBe(200);
+
+  const adminLogin = await request.post("/api/login", {
+    headers: asVisitor(),
+    data: {
+      email: "admin@weallcanada.local",
+      password: "local-admin-pass",
+      turnstileToken: TOKEN,
+    },
+  });
+  const adminCookie = adminLogin.headers()["set-cookie"]?.split(";")[0] ?? "";
+  const adminPage = await request.get("/stewards/admin", { headers: { cookie: adminCookie } });
+  expect(adminPage.status()).toBe(200);
+  const adminHtml = await adminPage.text();
+  expect(adminHtml).toContain("Activation");
+  expect(adminHtml).toContain(email);
+
+  const review = await request.post("/api/admin/applications", {
+    headers: { ...asVisitor(), cookie: adminCookie, "Content-Type": "application/json" },
+    data: { applicationId: Number(applicationId), decision: "approved" },
+  });
+  expect(review.status()).toBe(200);
+});

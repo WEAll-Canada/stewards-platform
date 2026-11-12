@@ -1,0 +1,197 @@
+---
+import Base from "../../../layouts/Base.astro";
+import WeAllCircle from "../../../components/WeAllCircle.astro";
+import { currentUser } from "../../../lib/auth";
+import { getCircleBySlug, listCircleMembers, listEventsForUser } from "../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const slug = Astro.params.slug ?? "";
+const circle = await getCircleBySlug(slug, user.id);
+if (!circle) return Astro.redirect("/stewards/circles");
+
+const members = await listCircleMembers(circle.id);
+const relatedEvents = (await listEventsForUser(user.id))
+  .filter((e) => e.circle_name === circle.name)
+  .slice(0, 5);
+
+const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].includes(circle.color_token)
+  ? circle.color_token
+  : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
+---
+<Base title={circle.name} active="circles" user={user}>
+  <p class="crumb"><a href="/stewards/circles">Circles</a> / {circle.name}</p>
+
+  <header class="circle-hero">
+    <WeAllCircle variant={variant} size={64} animate={true} />
+    <div>
+      <h1>{circle.name}</h1>
+      <p class="lede">{circle.description}</p>
+      <p class="meta">
+        {circle.member_count} members
+        {circle.status === "dormant" && " · dormant"}
+        {circle.membership && ` · you are a ${circle.membership}`}
+      </p>
+    </div>
+  </header>
+
+  {!circle.membership && (
+    <section class="circle-section">
+      {circle.pending_request ? (
+        <p class="note">Your join request is pending approval.</p>
+      ) : circle.status === "active" ? (
+        <button class="btn btn--accent" type="button" id="join-btn" data-id={circle.id}>
+          Request to join
+        </button>
+      ) : (
+        <p class="note">This circle is dormant and not open for joins.</p>
+      )}
+      <p id="join-status" role="status"></p>
+    </section>
+  )}
+
+  <section class="circle-section">
+    <h2>Members</h2>
+    {members.length === 0 ? (
+      <p class="meta">No members yet.</p>
+    ) : (
+      <ul class="member-list">
+        {members.map((m) => (
+          <li>
+            <strong>{m.display_name}</strong>
+            <span class="meta">{m.role}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+
+  <section class="circle-section">
+    <h2>Upcoming in this circle</h2>
+    {relatedEvents.length === 0 ? (
+      <p class="meta">No circle events yet. <a href="/stewards/events">Browse all events</a>.</p>
+    ) : (
+      <ul class="event-list">
+        {relatedEvents.map((e) => (
+          <li>
+            <time datetime={e.starts_at}>{e.starts_at.slice(0, 10)}</time>
+            <div>
+              <a href="/stewards/events">{e.title}</a>
+              {e.location && <div class="meta">{e.location}</div>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+
+  <section class="circle-section">
+    <h2>Resources</h2>
+    <p class="note">Shared resources and a decision log will land here next.</p>
+  </section>
+</Base>
+
+<style>
+  .crumb {
+    font-size: var(--text-sm);
+    color: var(--color-muted);
+    margin-bottom: var(--space-4);
+  }
+
+  .crumb a {
+    color: var(--color-ink-soft);
+  }
+
+  .circle-hero {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-6);
+    align-items: start;
+    padding-bottom: var(--space-8);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    margin-bottom: var(--space-8);
+  }
+
+  .circle-hero h1 {
+    margin: 0 0 var(--space-3);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    text-transform: capitalize;
+  }
+
+  .circle-section {
+    margin-bottom: var(--space-8);
+  }
+
+  .circle-section h2 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-lg);
+  }
+
+  .member-list,
+  .event-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .member-list li {
+    display: flex;
+    gap: var(--space-3);
+    align-items: baseline;
+  }
+
+  .event-list li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-3);
+    align-items: center;
+  }
+
+  .event-list time {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-blue);
+    min-width: 6.5rem;
+  }
+
+  @media (max-width: 640px) {
+    .circle-hero {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>("#join-btn");
+  const status = document.querySelector<HTMLParagraphElement>("#join-status");
+  button?.addEventListener("click", async () => {
+    if (!status) return;
+    status.textContent = "Sending request…";
+    const res = await fetch("/api/circles/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ circleId: Number(button.dataset.id) }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      button.replaceWith(
+        Object.assign(document.createElement("p"), {
+          className: "note",
+          textContent: "Your join request is pending approval.",
+        }),
+      );
+      status.textContent = "Request sent.";
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

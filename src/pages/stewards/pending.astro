@@ -8,11 +8,11 @@ if (user.status === "active") {
   return Astro.redirect(user.roles.includes("admin") ? "/stewards/admin" : "/stewards/dashboard");
 }
 ---
-<Base title="Application pending" user={user}>
+<Base title="Pending approval" user={user}>
   <h1>Thanks, {user.display_name || "friend"}</h1>
   <p class="lede">
-    Your application is with the admins. You’ll get full steward access once it’s approved —
-    then log in again and head to your dashboard.
+    Your request is with the admins — whether you applied to join or activated an existing
+    relationship. You’ll get full steward access once it’s approved.
   </p>
   <p class="note">Signed in as {user.email}</p>
 </Base>
