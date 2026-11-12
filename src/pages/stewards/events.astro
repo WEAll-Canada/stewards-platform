@@ -1,0 +1,154 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../lib/auth";
+import { listCirclesForUser, listEventsForUser } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const events = await listEventsForUser(user.id);
+const circles = await listCirclesForUser(user.id);
+const canCreate = hasRole(user, "admin") || hasRole(user, "circle_lead") || hasRole(user, "steward");
+---
+<Base title="Events" active="events" user={user}>
+  <h1>Events</h1>
+  <p class="lede">Upcoming gatherings. RSVP and add new ones for the alliance.</p>
+
+  <ul class="event-list">
+    {events.map((e) => (
+      <li data-id={e.id}>
+        <strong>{e.title}</strong>
+        <div class="meta">
+          {e.starts_at.slice(0, 16).replace("T", " ")} UTC
+          {e.location && ` · ${e.location}`}
+          {e.circle_name && ` · ${e.circle_name}`}
+          {e.rsvp && ` · RSVP: ${e.rsvp}`}
+        </div>
+        <p>{e.description}</p>
+        <div class="dir-actions">
+          <button class="btn btn--primary rsvp-btn" type="button" data-status="going">Going</button>
+          <button class="btn btn--accent rsvp-btn" type="button" data-status="interested">Interested</button>
+          <button class="btn btn--quiet rsvp-btn" type="button" data-status="cancelled">Cancel RSVP</button>
+        </div>
+      </li>
+    ))}
+  </ul>
+
+  {canCreate && (
+    <section style="margin-top: 2rem;">
+      <h2>Add an event</h2>
+      <form id="event-form" class="stack" style="max-width: 32rem;">
+        <label>Title <input name="title" required maxlength="200" /></label>
+        <label>Starts at (UTC ISO) <input name="startsAt" required placeholder="2026-12-15T17:00:00Z" /></label>
+        <label>Location <input name="location" maxlength="200" placeholder="Online" /></label>
+        <label>Description <textarea name="description" rows="3" maxlength="4000"></textarea></label>
+        <label>
+          Visibility
+          <select name="visibility">
+            <option value="stewards">Stewards</option>
+            <option value="public">Public</option>
+            <option value="circle">Circle only</option>
+          </select>
+        </label>
+        <label>
+          Circle (if circle-only)
+          <select name="circleId">
+            <option value="">—</option>
+            {circles.map((c) => <option value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <button class="btn btn--primary" type="submit">Create event</button>
+        <p id="event-status" role="status"></p>
+      </form>
+    </section>
+  )}
+  <p id="rsvp-status" role="status"></p>
+</Base>
+
+<style>
+  .event-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-6) 0 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .event-list li {
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .dir-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  select {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-subtle);
+  }
+
+  h2 {
+    font-size: var(--text-lg);
+  }
+</style>
+
+<script>
+  const rsvpStatus = document.querySelector<HTMLParagraphElement>("#rsvp-status")!;
+  document.querySelectorAll<HTMLElement>(".event-list > li").forEach((row) => {
+    row.querySelectorAll<HTMLButtonElement>(".rsvp-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        rsvpStatus.textContent = "Saving RSVP…";
+        const res = await fetch("/api/events/rsvp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId: Number(row.dataset.id), status: button.dataset.status }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          location.reload();
+          return;
+        }
+        rsvpStatus.textContent = data.error ?? "Something went wrong.";
+      });
+    });
+  });
+
+  const form = document.querySelector<HTMLFormElement>("#event-form");
+  const eventStatus = document.querySelector<HTMLParagraphElement>("#event-status");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!eventStatus) return;
+    eventStatus.textContent = "Creating…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: fields.get("title"),
+        startsAt: fields.get("startsAt"),
+        location: fields.get("location"),
+        description: fields.get("description"),
+        visibility: fields.get("visibility"),
+        circleId: fields.get("circleId") || null,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.reload();
+      return;
+    }
+    eventStatus.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

@@ -1,0 +1,72 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { turnstileSiteKey } from "../../lib/protect";
+
+const user = await currentUser(Astro.request);
+if (user?.status === "active") {
+  return Astro.redirect(user.roles.includes("admin") ? "/stewards/admin" : "/stewards/dashboard");
+}
+if (user?.status === "applicant") {
+  return Astro.redirect("/stewards/pending");
+}
+
+const siteKey = turnstileSiteKey();
+---
+<Base title="Login" active="login" user={user}>
+  <h1>Login</h1>
+  <p class="lede">
+    Sign in with email and password. Google sign-in will land once a tech steward adds OAuth keys.
+  </p>
+
+  <div class="stack">
+    <button class="btn btn--primary" type="button" disabled title="Coming soon">Continue with Google</button>
+    <p style="margin: 0; color: var(--color-muted); font-size: var(--text-sm); text-align: center;">or</p>
+    <form id="login-form" class="stack">
+      <label>
+        Email
+        <input type="email" name="email" autocomplete="email" required placeholder="you@example.com" />
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+      {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
+      <button class="btn btn--accent" type="submit">Sign in</button>
+      <p id="form-status" role="status"></p>
+    </form>
+  </div>
+
+  <p class="note" style="margin-top: 1.5rem;">
+    New here? <a href="/stewards/apply">Apply to join</a> first — admins approve before full access.
+  </p>
+</Base>
+
+{siteKey && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#login-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Signing in…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: fields.get("email"),
+        password: fields.get("password"),
+        turnstileToken: fields.get("cf-turnstile-response"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.href = data.redirect ?? "/stewards/dashboard";
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+    (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
+  });
+</script>

@@ -1,7 +1,16 @@
 ---
 import Base from "../layouts/Base.astro";
+import { currentUser } from "../lib/auth";
+
+const user = await currentUser(Astro.request);
 ---
-<Base title="Welcome">
-  <h1>Welcome</h1>
-  <p>This site is ready to edit. Ask your agent to change this page.</p>
+<Base title="WeAll Canada Stewards" active="home" user={user}>
+  <h1 class="display">WeAll Canada</h1>
+  <p class="lede">
+    Collaboration and learning for stewards building wellbeing economies.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn--primary" href="/stewards">Enter Stewards Platform</a>
+    <a class="btn btn--accent" href="/stewards/apply">Apply</a>
+  </div>
 </Base>

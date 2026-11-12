@@ -1,0 +1,95 @@
+---
+/**
+ * WEAll-style multicolour circle mark (SVG).
+ * variant: "master" | "knowledge" | "policy" | "liberating" | "grassroots" | "central"
+ */
+interface Props {
+  variant?: "master" | "central" | "knowledge" | "policy" | "liberating" | "grassroots";
+  size?: number;
+  class?: string;
+  animate?: boolean;
+}
+
+const { variant = "master", size = 40, class: className = "", animate = true } = Astro.props;
+
+const swatches: Record<string, [string, string, string, string]> = {
+  master: ["#fdda24", "#ff8200", "#00a9e0", "#10b726"],
+  central: ["#fdda24", "#ff8200", "#00a9e0", "#10b726"],
+  knowledge: ["#00a9e0", "#00a9e0", "#0c4da2", "#00a9e0"],
+  policy: ["#0c4da2", "#0c4da2", "#00a9e0", "#0c4da2"],
+  liberating: ["#ff8200", "#fdda24", "#ff8200", "#fa4616"],
+  grassroots: ["#10b726", "#84bd00", "#10b726", "#10b726"],
+};
+
+const colors = swatches[variant] ?? swatches.master;
+const dormant = variant === "grassroots";
+---
+
+<span
+  class:list={["weall-circle", className, { "is-animated": animate, "is-dormant": dormant }]}
+  style={`width:${size}px;height:${size}px`}
+  aria-hidden="true"
+>
+  <svg viewBox="0 0 48 48" width={size} height={size} role="img">
+    <title>WeAll circle</title>
+    <g class="arcs" fill="none" stroke-width="6" stroke-linecap="round">
+      <circle class="arc a1" cx="24" cy="24" r="16" stroke={colors[0]} stroke-dasharray="28 72" transform="rotate(0 24 24)"></circle>
+      <circle class="arc a2" cx="24" cy="24" r="16" stroke={colors[1]} stroke-dasharray="28 72" transform="rotate(90 24 24)"></circle>
+      <circle class="arc a3" cx="24" cy="24" r="16" stroke={colors[2]} stroke-dasharray="28 72" transform="rotate(180 24 24)"></circle>
+      <circle class="arc a4" cx="24" cy="24" r="16" stroke={colors[3]} stroke-dasharray="28 72" transform="rotate(270 24 24)"></circle>
+    </g>
+  </svg>
+</span>
+
+<style>
+  .weall-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .weall-circle.is-dormant {
+    opacity: 0.4;
+  }
+
+  .weall-circle.is-dormant .arcs {
+    stroke-dasharray: 18 20;
+  }
+
+  .weall-circle .arcs {
+    transform-origin: 24px 24px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .weall-circle.is-animated:hover .arcs {
+      animation: circle-nudge 0.7s ease-out;
+    }
+
+    .weall-circle.is-animated .a1 {
+      animation: arc-breathe 6s ease-in-out infinite;
+    }
+  }
+
+  @keyframes circle-nudge {
+    0% {
+      transform: rotate(0deg);
+    }
+    40% {
+      transform: rotate(12deg);
+    }
+    100% {
+      transform: rotate(0deg);
+    }
+  }
+
+  @keyframes arc-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.75;
+    }
+  }
+</style>

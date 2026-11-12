@@ -4,3 +4,10 @@
 
 # Cloudflare's public always-pass Turnstile test secret (not a real secret).
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# Signs steward session cookies locally. Staging/production: wrangler secret put SESSION_SECRET.
+SESSION_SECRET=local-dev-session-secret-change-me
+
+# Optional. Without this, alliance email replies/campaigns simulate locally.
+# RESEND_API_KEY=
+# EMAIL_FROM=WeAll Canada <hello@weallcanada.com>

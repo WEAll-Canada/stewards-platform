@@ -1,0 +1,99 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { getProfileBundle } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const profile = await getProfileBundle(user.id);
+if (!profile) return Astro.redirect("/stewards/dashboard");
+---
+<Base title="Profile" active="profile" user={user}>
+  <h1>Your profile</h1>
+  <p class="lede">Update how you appear to other stewards and what you receive.</p>
+
+  <form id="profile-form" class="stack" style="max-width: 32rem;">
+    <label>
+      Display name
+      <input name="display_name" required maxlength="100" value={profile.display_name} />
+    </label>
+    <label>
+      Bio
+      <textarea name="bio" rows="4" maxlength="2000">{profile.bio}</textarea>
+    </label>
+    <label>
+      Location
+      <input name="location" maxlength="120" value={profile.location} />
+    </label>
+    <label>
+      Organization / partner
+      <input name="partner_org" maxlength="120" value={profile.partner_org} />
+    </label>
+    <label>
+      Profile visibility
+      <select name="visibility">
+        <option value="stewards" selected={profile.visibility === "stewards"}>Stewards only</option>
+        <option value="public" selected={profile.visibility === "public"}>Public</option>
+        <option value="private" selected={profile.visibility === "private"}>Private</option>
+      </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="allow_directory" checked={profile.allow_directory === 1} />
+      Show me in the alliance directory
+    </label>
+    <label class="check">
+      <input type="checkbox" name="allow_messages" checked={profile.allow_messages === 1} />
+      Allow messages from other stewards
+    </label>
+    <label class="check">
+      <input type="checkbox" name="email_updates" checked={profile.email_updates === 1} />
+      Email updates and campaigns
+    </label>
+    <button class="btn btn--primary" type="submit">Save</button>
+    <p id="form-status" role="status"></p>
+  </form>
+</Base>
+
+<style>
+  select {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 400;
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#profile-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Saving…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        display_name: fields.get("display_name"),
+        bio: fields.get("bio"),
+        location: fields.get("location"),
+        partner_org: fields.get("partner_org"),
+        visibility: fields.get("visibility"),
+        allow_directory: fields.get("allow_directory") === "on",
+        allow_messages: fields.get("allow_messages") === "on",
+        email_updates: fields.get("email_updates") === "on",
+      }),
+    });
+    const data = await res.json();
+    status.textContent = res.ok ? "Saved." : (data.error ?? "Something went wrong.");
+  });
+</script>

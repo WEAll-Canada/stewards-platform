@@ -1,0 +1,60 @@
+---
+import Base from "../../layouts/Base.astro";
+import WeAllCircle from "../../components/WeAllCircle.astro";
+import { currentUser } from "../../lib/auth";
+
+const user = await currentUser(Astro.request);
+---
+<Base title="Stewards" active="home" user={user}>
+  <section class="hero">
+    <p class="eyebrow">WeAll Canada</p>
+    <h1 class="display">Stewards Platform</h1>
+    <p class="lede">
+      A place for stewards, circle leads, and admins to collaborate, learn, and stay connected —
+      built for wellbeing economies across Canada.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn--primary" href="/stewards/apply">Apply to join</a>
+      <a class="btn btn--accent" href="/stewards/login">Login</a>
+    </div>
+  </section>
+
+  <section class="circle-row" aria-label="Our circles">
+    <div class="circle-chip">
+      <WeAllCircle variant="central" size={28} animate={false} />
+      <span class="label">Central Circle</span>
+    </div>
+    <div class="circle-chip">
+      <WeAllCircle variant="knowledge" size={28} animate={false} />
+      <span class="label">Knowledge Building</span>
+    </div>
+    <div class="circle-chip">
+      <WeAllCircle variant="policy" size={28} animate={false} />
+      <span class="label">Policy</span>
+    </div>
+    <div class="circle-chip">
+      <WeAllCircle variant="liberating" size={28} animate={false} />
+      <span class="label">Liberating Tools</span>
+    </div>
+    <div class="circle-chip">
+      <WeAllCircle variant="grassroots" size={28} animate={false} />
+      <span class="label">Grassroots</span>
+      <span class="meta">dormant</span>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .eyebrow {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-highlight);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--space-2);
+  }
+
+  .hero {
+    padding-top: var(--space-4);
+  }
+</style>

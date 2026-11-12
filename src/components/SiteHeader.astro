@@ -1,0 +1,118 @@
+---
+import type { StewardUser } from "../lib/db";
+import WeAllCircle from "./WeAllCircle.astro";
+
+interface Props {
+  active?: string;
+  user?: StewardUser | null;
+}
+
+const { active, user = null } = Astro.props;
+const isAdmin = user?.roles.includes("admin");
+const canEmail = isAdmin || user?.roles.includes("circle_lead");
+---
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="site-header__brand" href="/stewards" aria-label="WeAll Canada Stewards home">
+      <WeAllCircle size={36} animate={true} />
+    </a>
+    <nav class="site-header__nav" aria-label="Primary">
+      <a href="/stewards" class:list={{ "is-active": active === "home" }}>Stewards</a>
+      {user?.status === "active" && (
+        <>
+          <a href="/stewards/dashboard" class:list={{ "is-active": active === "dashboard" }}>Dashboard</a>
+          <a href="/stewards/directory" class:list={{ "is-active": active === "directory" }}>Directory</a>
+          <a href="/stewards/circles" class:list={{ "is-active": active === "circles" }}>Circles</a>
+          <a href="/stewards/events" class:list={{ "is-active": active === "events" }}>Events</a>
+          <a href="/stewards/messages" class:list={{ "is-active": active === "messages" }}>Messages</a>
+          <a href="/stewards/profile" class:list={{ "is-active": active === "profile" }}>Profile</a>
+          <a href="/stewards/faq" class:list={{ "is-active": active === "faq" }}>FAQ</a>
+        </>
+      )}
+      {canEmail && (
+        <a href="/stewards/email" class:list={{ "is-active": active === "email" }}>Email</a>
+      )}
+      {isAdmin && (
+        <a href="/stewards/admin" class:list={{ "is-active": active === "admin" }}>Admin</a>
+      )}
+    </nav>
+    <div class="site-header__actions">
+      {user ? (
+        <>
+          <span class="site-header__who">{user.display_name || user.email}</span>
+          <form method="post" action="/api/logout">
+            <button class="btn btn--quiet" type="submit">Log out</button>
+          </form>
+        </>
+      ) : (
+        <>
+          <a class="btn btn--accent" href="/stewards/apply">Apply</a>
+          <a class="btn btn--primary" href="/stewards/login">Login</a>
+        </>
+      )}
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    min-height: var(--header-height);
+  }
+
+  .site-header__inner {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: var(--space-3) var(--space-6);
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+  }
+
+  .site-header__brand {
+    display: inline-flex;
+    line-height: 0;
+  }
+
+  .site-header__nav {
+    display: flex;
+    gap: var(--space-4);
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  .site-header__nav a {
+    color: var(--color-ink-soft);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  .site-header__nav a:hover,
+  .site-header__nav a.is-active {
+    color: var(--color-highlight);
+  }
+
+  .site-header__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .site-header__who {
+    font-size: var(--text-sm);
+    color: var(--color-muted);
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    .site-header__who {
+      display: none;
+    }
+  }
+</style>

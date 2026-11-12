@@ -1,0 +1,110 @@
+---
+import Base from "../../layouts/Base.astro";
+import WeAllCircle from "../../components/WeAllCircle.astro";
+import { currentUser } from "../../lib/auth";
+import { listEventsForUser, listUserCircles } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const circles = await listUserCircles(user.id);
+const upcoming = (await listEventsForUser(user.id)).slice(0, 3);
+const variant = (token: string) =>
+  (["central", "knowledge", "policy", "liberating", "grassroots"].includes(token)
+    ? token
+    : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
+---
+<Base title="Dashboard" active="dashboard" user={user}>
+  <h1>Welcome, {user.display_name || "steward"}</h1>
+  <p class="lede">Your home base across circles, messages, and events.</p>
+
+  <div class="bento">
+    <section class="panel panel--cyan">
+      <h2>Alliance</h2>
+      <p>Browse the <a href="/stewards/directory">directory</a> and read the <a href="/stewards/faq">FAQ</a>.</p>
+    </section>
+    <section class="panel panel--blue">
+      <h2>Your circles</h2>
+      {circles.length === 0 ? (
+        <p>No memberships yet. <a href="/stewards/circles">Request to join</a>.</p>
+      ) : (
+        <div class="circle-row" style="border:0;margin:0;padding:0">
+          {circles.map((c) => (
+            <div class="circle-chip">
+              <WeAllCircle variant={variant(c.color_token)} size={24} animate={false} />
+              <span class="label">{c.name}</span>
+              <span class="meta">{c.role}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+    <section class="panel panel--orange">
+      <h2>Messages</h2>
+      <p><a href="/stewards/messages">Open conversations</a></p>
+    </section>
+    <section class="panel panel--yellow">
+      <h2>Upcoming</h2>
+      {upcoming.length === 0 ? (
+        <p>No events yet. <a href="/stewards/events">See calendar</a>.</p>
+      ) : (
+        <ul class="mini">
+          {upcoming.map((e) => (
+            <li>
+              <a href="/stewards/events">{e.title}</a>
+              <div class="meta">{e.starts_at.slice(0, 10)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  </div>
+</Base>
+
+<style>
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+  }
+
+  .panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-subtle);
+    border-top-width: 4px;
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    min-height: 9rem;
+  }
+
+  .panel h2 {
+    font-size: var(--text-md);
+    margin: 0 0 var(--space-2);
+  }
+
+  .panel p,
+  .mini {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .mini {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-xs);
+  }
+
+  .panel--cyan { border-top-color: var(--color-cyan); }
+  .panel--blue { border-top-color: var(--color-blue); }
+  .panel--orange { border-top-color: var(--color-orange); }
+  .panel--yellow { border-top-color: var(--color-yellow); }
+</style>

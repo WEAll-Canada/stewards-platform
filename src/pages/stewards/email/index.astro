@@ -1,0 +1,81 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { listCampaigns, listEmailThreads } from "../../../lib/db";
+import { emailConfigured } from "../../../lib/email";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin") && !hasRole(user, "circle_lead")) {
+  return Astro.redirect("/stewards/dashboard");
+}
+
+const threads = await listEmailThreads();
+const campaigns = await listCampaigns();
+const live = emailConfigured();
+---
+<Base title="Email" active="email" user={user}>
+  <h1>Alliance email</h1>
+  <p class="lede">
+    Inbox for hello@weallcanada.com
+    {live ? " · live sending on" : " · local simulate mode (no RESEND_API_KEY)"}.
+  </p>
+
+  <p><a class="btn btn--accent" href="/stewards/email/campaigns">New campaign</a></p>
+
+  <h2>Inbox</h2>
+  <ul class="email-list">
+    {threads.map((t) => (
+      <li>
+        <a href={`/stewards/email/${t.id}`}>
+          <strong>{t.subject}</strong>
+          <div class="meta">{t.last_message_at.slice(0, 16).replace("T", " ")} · {t.status}</div>
+          <div class="meta">{t.preview.slice(0, 120)}</div>
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Campaigns</h2>
+  {campaigns.length === 0 ? (
+    <p class="note">No campaigns yet.</p>
+  ) : (
+    <ul class="email-list">
+      {campaigns.map((c) => (
+        <li>
+          <strong>{c.name}</strong>
+          <div class="meta">{c.subject} · {c.recipient_count} people · {c.status}</div>
+        </li>
+      ))}
+    </ul>
+  )}
+</Base>
+
+<style>
+  h2 {
+    margin-top: var(--space-8);
+    font-size: var(--text-lg);
+  }
+
+  .email-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-4) 0 0;
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .email-list a {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    padding: var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+</style>

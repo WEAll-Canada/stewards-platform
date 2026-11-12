@@ -1,0 +1,78 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { listActiveStewardEmails } from "../../../lib/db";
+import { emailConfigured } from "../../../lib/email";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/email");
+
+const recipientCount = (await listActiveStewardEmails()).length;
+const live = emailConfigured();
+---
+<Base title="New campaign" active="email" user={user}>
+  <p><a href="/stewards/email">← Email</a></p>
+  <h1>New campaign</h1>
+  <p class="lede">
+    Sends to active stewards who opted into email updates.
+    {live ? "Live provider connected." : "No provider key — this will simulate locally."}
+  </p>
+
+  <form id="campaign-form" class="stack" style="max-width: 36rem;">
+    <label>
+      Internal name
+      <input name="name" required maxlength="120" placeholder="March update" />
+    </label>
+    <label>
+      Subject
+      <input name="subject" required maxlength="200" />
+    </label>
+    <label>
+      Body
+      <textarea name="body" rows="8" required></textarea>
+    </label>
+    <label>
+      Type the recipient count to confirm (<span id="hint-count">{recipientCount}</span>)
+      <input name="confirmCount" type="number" required value={recipientCount} />
+    </label>
+    <button class="btn btn--primary" type="submit">Send campaign</button>
+    <p id="campaign-status" role="status">{recipientCount} opted-in recipients right now.</p>
+  </form>
+</Base>
+
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#campaign-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#campaign-status")!;
+  const hint = document.querySelector<HTMLElement>("#hint-count")!;
+
+  // First dry call to learn exact opt-in count when confirm mismatches.
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Sending…";
+    const fields = new FormData(form);
+    const payload = {
+      name: fields.get("name"),
+      subject: fields.get("subject"),
+      body: fields.get("body"),
+      confirmCount: Number(fields.get("confirmCount")),
+    };
+    const res = await fetch("/api/email/campaigns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.textContent = `Campaign ${data.mode} to ${data.recipientCount} people.`;
+      location.href = "/stewards/email";
+      return;
+    }
+    if (data.recipientCount != null) {
+      hint.textContent = String(data.recipientCount);
+      (form.elements.namedItem("confirmCount") as HTMLInputElement).value = String(data.recipientCount);
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

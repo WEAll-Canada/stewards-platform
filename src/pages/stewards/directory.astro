@@ -1,0 +1,153 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { listConnectionsFor, listDirectoryStewards } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const stewards = await listDirectoryStewards();
+const connections = await listConnectionsFor(user.id);
+---
+<Base title="Directory" active="directory" user={user}>
+  <h1>Alliance directory</h1>
+  <p class="lede">Stewards who chose to appear in the directory. Log connection strength or send a message.</p>
+
+  {stewards.length === 0 ? (
+    <p class="note">No directory profiles yet.</p>
+  ) : (
+    <ul class="dir-list">
+      {stewards.map((s) => (
+        <li data-id={s.id}>
+          <strong>{s.display_name || "Steward"}</strong>
+          {s.partner_org && <span class="org"> · {s.partner_org}</span>}
+          {s.location && <div class="meta">{s.location}</div>}
+          {s.bio && <p>{s.bio}</p>}
+          {s.id !== user.id && (
+            <div class="dir-actions">
+              <label>
+                Strength
+                <select class="strength">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                </select>
+              </label>
+              <label>
+                Reason
+                <select class="reason">
+                  <option value="work">work</option>
+                  <option value="social">social</option>
+                  <option value="learning" selected>learning</option>
+                </select>
+              </label>
+              <button class="btn btn--accent connect-btn" type="button">Save connection</button>
+              <button class="btn btn--primary message-btn" type="button">Message</button>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )}
+
+  <h2>Your connections</h2>
+  {connections.length === 0 ? (
+    <p class="note">No connections logged yet.</p>
+  ) : (
+    <ul class="dir-list">
+      {connections.map((c) => (
+        <li>
+          <strong>{c.display_name}</strong>
+          <div class="meta">strength {c.strength} · {c.reason} · {c.direction}</div>
+        </li>
+      ))}
+    </ul>
+  )}
+  <p id="dir-status" role="status"></p>
+</Base>
+
+<style>
+  .dir-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-6) 0 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .dir-list li {
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .org,
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .dir-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: end;
+    margin-top: var(--space-3);
+  }
+
+  .dir-actions label {
+    font-size: var(--text-sm);
+  }
+
+  select {
+    font: inherit;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-subtle);
+  }
+
+  h2 {
+    margin-top: var(--space-8);
+    font-size: var(--text-lg);
+  }
+</style>
+
+<script>
+  const status = document.querySelector<HTMLParagraphElement>("#dir-status")!;
+  document.querySelectorAll<HTMLElement>(".dir-list > li[data-id]").forEach((row) => {
+    const id = Number(row.dataset.id);
+    row.querySelector<HTMLButtonElement>(".connect-btn")?.addEventListener("click", async () => {
+      status.textContent = "Saving connection…";
+      const strength = Number(row.querySelector<HTMLSelectElement>(".strength")?.value);
+      const reason = row.querySelector<HTMLSelectElement>(".reason")?.value ?? "learning";
+      const res = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId: id, strength, reason }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        status.textContent = "Connection saved.";
+        location.reload();
+        return;
+      }
+      status.textContent = data.error ?? "Something went wrong.";
+    });
+
+    row.querySelector<HTMLButtonElement>(".message-btn")?.addEventListener("click", async () => {
+      status.textContent = "Opening conversation…";
+      const res = await fetch("/api/messages/steward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId: id, body: "Hi! Connecting via the directory." }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        location.href = `/stewards/messages?thread=${data.threadId}`;
+        return;
+      }
+      status.textContent = data.error ?? "Something went wrong.";
+    });
+  });
+</script>

@@ -1,0 +1,97 @@
+---
+import Base from "../../layouts/Base.astro";
+import WeAllCircle from "../../components/WeAllCircle.astro";
+import { currentUser } from "../../lib/auth";
+import { listCirclesForUser } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const circles = await listCirclesForUser(user.id);
+const variant = (token: string) =>
+  (["central", "knowledge", "policy", "liberating", "grassroots"].includes(token)
+    ? token
+    : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
+---
+<Base title="Circles" active="circles" user={user}>
+  <h1>Circles</h1>
+  <p class="lede">Request to join an active circle. Leads and admins approve requests.</p>
+
+  <ul class="circle-list">
+    {circles.map((c) => (
+      <li class="circle-card" data-id={c.id}>
+        <div class="circle-card__top">
+          <WeAllCircle variant={variant(c.color_token)} size={32} animate={false} />
+          <div>
+            <strong>{c.name}</strong>
+            {c.status === "dormant" && <span class="meta"> · dormant</span>}
+            <div class="meta">{c.member_count} members</div>
+          </div>
+        </div>
+        <p>{c.description}</p>
+        {c.membership ? (
+          <p class="note">You are a {c.membership} here.</p>
+        ) : c.pending_request ? (
+          <p class="note">Join request pending.</p>
+        ) : c.status === "active" ? (
+          <button class="btn btn--accent join-btn" type="button">Request to join</button>
+        ) : (
+          <p class="note">Not open while dormant.</p>
+        )}
+      </li>
+    ))}
+  </ul>
+  <p id="circle-status" role="status"></p>
+</Base>
+
+<style>
+  .circle-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-6) 0 0;
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  }
+
+  .circle-card {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  .circle-card__top {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+</style>
+
+<script>
+  const status = document.querySelector<HTMLParagraphElement>("#circle-status")!;
+  document.querySelectorAll<HTMLElement>(".circle-card").forEach((card) => {
+    const button = card.querySelector<HTMLButtonElement>(".join-btn");
+    button?.addEventListener("click", async () => {
+      status.textContent = "Sending request…";
+      const res = await fetch("/api/circles/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ circleId: Number(card.dataset.id) }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        button.replaceWith(Object.assign(document.createElement("p"), { className: "note", textContent: "Join request pending." }));
+        status.textContent = "Request sent.";
+        return;
+      }
+      status.textContent = data.error ?? "Something went wrong.";
+    });
+  });
+</script>

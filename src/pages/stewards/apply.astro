@@ -1,0 +1,78 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { turnstileSiteKey } from "../../lib/protect";
+
+const user = await currentUser(Astro.request);
+if (user?.status === "active") {
+  return Astro.redirect("/stewards/dashboard");
+}
+if (user?.status === "applicant") {
+  return Astro.redirect("/stewards/pending");
+}
+
+const siteKey = turnstileSiteKey();
+---
+<Base title="Apply" active="apply" user={user}>
+  <h1>Apply to become a steward</h1>
+  <p class="lede">
+    Open application — an admin will review and approve before you get full access.
+  </p>
+
+  <form id="apply-form" class="stack">
+    <label>
+      Full name
+      <input type="text" name="name" autocomplete="name" required maxlength="100" placeholder="Your name" />
+    </label>
+    <label>
+      Email
+      <input type="email" name="email" autocomplete="email" required maxlength="200" placeholder="you@example.com" />
+    </label>
+    <label>
+      Password
+      <input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" />
+    </label>
+    <label>
+      Why do you want to join?
+      <textarea name="why" rows="4" required maxlength="2000" placeholder="A few sentences is plenty."></textarea>
+    </label>
+    {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
+    <button class="btn btn--primary" type="submit">Submit application</button>
+    <p id="form-status" role="status"></p>
+  </form>
+
+  <p class="note" style="margin-top: 1.5rem;">
+    Already applied? <a href="/stewards/login">Log in</a> to check your status.
+  </p>
+</Base>
+
+{siteKey && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#apply-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Submitting…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: fields.get("name"),
+        email: fields.get("email"),
+        password: fields.get("password"),
+        why: fields.get("why"),
+        turnstileToken: fields.get("cf-turnstile-response"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.href = data.redirect ?? "/stewards/pending";
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+    (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
+  });
+</script>

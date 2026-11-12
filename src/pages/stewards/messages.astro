@@ -1,0 +1,145 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { listStewardMessages, listStewardThreads } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const threads = await listStewardThreads(user.id);
+const selectedId = Number(Astro.url.searchParams.get("thread") || threads[0]?.id || 0);
+const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [];
+---
+<Base title="Messages" active="messages" user={user}>
+  <h1>Messages</h1>
+  <p class="lede">Direct messages with other stewards. Start one from the directory.</p>
+
+  <div class="msg-layout">
+    <aside class="thread-list">
+      {threads.length === 0 ? (
+        <p class="note">No conversations yet.</p>
+      ) : (
+        <ul>
+          {threads.map((t) => (
+            <li>
+              <a class:list={{ "is-active": t.id === selectedId }} href={`/stewards/messages?thread=${t.id}`}>
+                <strong>{t.other_name}</strong>
+                <div class="meta">{t.preview.slice(0, 80)}</div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
+
+    <section class="thread-pane">
+      {selectedId ? (
+        <>
+          <div class="message-log">
+            {messages.map((m) => (
+              <div class:list={["bubble", { mine: m.from_user_id === user.id }]}>
+                <div class="meta">{m.display_name} · {m.created_at.slice(0, 16).replace("T", " ")}</div>
+                <p>{m.body}</p>
+              </div>
+            ))}
+          </div>
+          <form id="msg-form" class="stack" data-thread={selectedId}>
+            <label>
+              Reply
+              <textarea name="body" rows="3" required maxlength="4000"></textarea>
+            </label>
+            <button class="btn btn--primary" type="submit">Send</button>
+            <p id="msg-status" role="status"></p>
+          </form>
+        </>
+      ) : (
+        <p class="note">Pick a conversation or message someone from the directory.</p>
+      )}
+    </section>
+  </div>
+</Base>
+
+<style>
+  .msg-layout {
+    display: grid;
+    grid-template-columns: minmax(12rem, 18rem) 1fr;
+    gap: var(--space-6);
+    margin-top: var(--space-6);
+  }
+
+  @media (max-width: 800px) {
+    .msg-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .thread-list ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .thread-list a {
+    display: block;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .thread-list a.is-active,
+  .thread-list a:hover {
+    background: var(--color-surface-subtle);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .message-log {
+    display: grid;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .bubble {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-subtle);
+  }
+
+  .bubble.mine {
+    background: #fff8cc;
+  }
+
+  .bubble p {
+    margin: var(--space-1) 0 0;
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#msg-form");
+  const status = document.querySelector<HTMLParagraphElement>("#msg-status");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!status) return;
+    status.textContent = "Sending…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/messages/steward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: Number(form.dataset.thread),
+        body: fields.get("body"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.reload();
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

@@ -1,0 +1,126 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../lib/auth";
+import { listPendingApplications, listPendingCircleJoins } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const pending = await listPendingApplications();
+const circleJoins = await listPendingCircleJoins();
+---
+<Base title="Admin" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">Approve steward applications and circle join requests. <a href="/stewards/email">Open email</a></p>
+
+  <h2>Steward applications</h2>
+  {pending.length === 0 ? (
+    <p class="note">No pending applications right now.</p>
+  ) : (
+    <ul class="app-list">
+      {pending.map((app) => (
+        <li class="app-card" data-kind="application" data-id={app.id}>
+          <div>
+            <strong>{app.display_name || "Applicant"}</strong>
+            <div class="meta">{app.email} · applied {app.created_at.slice(0, 10)}</div>
+            <p>{app.why}</p>
+          </div>
+          <div class="app-actions">
+            <button class="btn btn--primary" type="button" data-decision="approved">Approve</button>
+            <button class="btn btn--quiet" type="button" data-decision="rejected">Reject</button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+
+  <h2>Circle join requests</h2>
+  {circleJoins.length === 0 ? (
+    <p class="note">No pending circle requests.</p>
+  ) : (
+    <ul class="app-list">
+      {circleJoins.map((jr) => (
+        <li class="app-card" data-kind="circle" data-id={jr.id}>
+          <div>
+            <strong>{jr.display_name || "Steward"}</strong>
+            <div class="meta">{jr.email} · {jr.circle_name} · {jr.created_at.slice(0, 10)}</div>
+          </div>
+          <div class="app-actions">
+            <button class="btn btn--primary" type="button" data-decision="approved">Approve</button>
+            <button class="btn btn--quiet" type="button" data-decision="rejected">Reject</button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+  <p id="admin-status" role="status"></p>
+</Base>
+
+<style>
+  h2 {
+    margin-top: var(--space-8);
+    font-size: var(--text-lg);
+  }
+
+  .app-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-4) 0 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .app-card {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: var(--space-1) 0 var(--space-2);
+  }
+
+  .app-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+</style>
+
+<script>
+  const status = document.querySelector<HTMLParagraphElement>("#admin-status")!;
+  document.querySelectorAll<HTMLElement>(".app-card").forEach((card) => {
+    card.querySelectorAll<HTMLButtonElement>("button[data-decision]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const id = Number(card.dataset.id);
+        const decision = button.dataset.decision;
+        const kind = card.dataset.kind;
+        status.textContent = "Saving…";
+        const url = kind === "circle" ? "/api/admin/circle-joins" : "/api/admin/applications";
+        const payload =
+          kind === "circle"
+            ? { requestId: id, decision }
+            : { applicationId: id, decision };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          card.remove();
+          status.textContent = decision === "approved" ? "Approved." : "Rejected.";
+          return;
+        }
+        status.textContent = data.error ?? "Something went wrong.";
+      });
+    });
+  });
+</script>

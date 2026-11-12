@@ -1,0 +1,84 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { getEmailThread } from "../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin") && !hasRole(user, "circle_lead")) {
+  return Astro.redirect("/stewards/dashboard");
+}
+
+const id = Number(Astro.params.id);
+const { thread, messages } = await getEmailThread(id);
+if (!thread) return Astro.redirect("/stewards/email");
+---
+<Base title={thread.subject} active="email" user={user}>
+  <p><a href="/stewards/email">← Inbox</a></p>
+  <h1>{thread.subject}</h1>
+
+  <div class="message-log">
+    {messages.map((m) => (
+      <div class:list={["bubble", { out: m.direction === "outbound" }]}>
+        <div class="meta">{m.direction} · {m.from_addr} → {m.to_addrs} · {m.created_at.slice(0, 16).replace("T", " ")}</div>
+        <p>{m.body_text}</p>
+      </div>
+    ))}
+  </div>
+
+  <form id="reply-form" class="stack" data-thread={thread.id}>
+    <label>
+      Reply
+      <textarea name="body" rows="5" required></textarea>
+    </label>
+    <button class="btn btn--primary" type="submit">Send reply</button>
+    <p id="reply-status" role="status"></p>
+  </form>
+</Base>
+
+<style>
+  .message-log {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-6) 0;
+  }
+
+  .bubble {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-subtle);
+  }
+
+  .bubble.out {
+    background: #e8f7ff;
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#reply-form")!;
+  const status = document.querySelector<HTMLParagraphElement>("#reply-status")!;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    status.textContent = "Sending…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/email/reply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: Number(form.dataset.thread),
+        body: fields.get("body"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.reload();
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

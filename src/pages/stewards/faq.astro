@@ -1,0 +1,82 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../lib/auth";
+import { listFaqs } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+const faqs = await listFaqs();
+const isAdmin = user && hasRole(user, "admin");
+---
+<Base title="FAQ" active="faq" user={user}>
+  <h1>FAQ</h1>
+  <p class="lede">Common questions about the Stewards Platform.</p>
+
+  <div class="faq-list">
+    {faqs.map((f) => (
+      <details>
+        <summary>{f.question}</summary>
+        <p>{f.answer}</p>
+      </details>
+    ))}
+  </div>
+
+  {isAdmin && (
+    <section style="margin-top: 2rem;">
+      <h2>Add FAQ</h2>
+      <form id="faq-form" class="stack" style="max-width: 32rem;">
+        <label>Question <input name="question" required maxlength="300" /></label>
+        <label>Answer <textarea name="answer" rows="4" required maxlength="4000"></textarea></label>
+        <button class="btn btn--primary" type="submit">Save</button>
+        <p id="faq-status" role="status"></p>
+      </form>
+    </section>
+  )}
+</Base>
+
+<style>
+  .faq-list {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+  }
+
+  details {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  summary {
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  h2 {
+    font-size: var(--text-lg);
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#faq-form");
+  const status = document.querySelector<HTMLParagraphElement>("#faq-status");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!status) return;
+    status.textContent = "Saving…";
+    const fields = new FormData(form);
+    const res = await fetch("/api/faq", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: fields.get("question"),
+        answer: fields.get("answer"),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      location.reload();
+      return;
+    }
+    status.textContent = data.error ?? "Something went wrong.";
+  });
+</script>

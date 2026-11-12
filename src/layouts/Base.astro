@@ -1,19 +1,200 @@
 ---
+import type { StewardUser } from "../lib/db";
+import "../styles/tokens.css";
+import SiteHeader from "../components/SiteHeader.astro";
+
 interface Props {
   title: string;
+  active?: string;
+  showHeader?: boolean;
+  user?: StewardUser | null;
 }
-const { title } = Astro.props;
+
+const { title, active, showHeader = true, user = null } = Astro.props;
+const fullTitle = title.includes("WeAll") ? title : `${title} · WeAll Canada Stewards`;
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}</title>
+    <meta name="description" content="WeAll Canada Stewards Platform — collaboration and learning for stewards, circle leads, and admins." />
+    <meta name="theme-color" content="#000000" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Nunito:wght@700&family=Rubik+Mono+One&display=swap"
+      rel="stylesheet"
+    />
+    <title>{fullTitle}</title>
   </head>
   <body>
+    {showHeader && <SiteHeader active={active} user={user} />}
     <main>
       <slot />
     </main>
   </body>
 </html>
+
+<style is:global>
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-md);
+    line-height: 1.5;
+    color: var(--color-body);
+    background: var(--color-surface);
+    min-height: 100vh;
+  }
+
+  main {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-12);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.15;
+    color: var(--color-ink);
+  }
+
+  h1.display {
+    font-family: var(--font-display);
+    font-size: var(--text-hero);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin: 0 0 var(--space-4);
+  }
+
+  h1,
+  h2 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0 0 var(--space-4);
+    max-width: 40rem;
+  }
+
+  .lede {
+    color: var(--color-muted);
+    font-size: var(--text-lg);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem 1.15rem;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+
+  .btn:hover {
+    opacity: 0.9;
+  }
+
+  .btn--primary {
+    background: var(--color-primary);
+    color: var(--color-primary-text);
+  }
+
+  .btn--accent {
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+  }
+
+  .btn--quiet {
+    background: transparent;
+    color: var(--color-ink);
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+  }
+
+  .circle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-top: var(--space-8);
+    padding-top: var(--space-8);
+    border-top: 1px solid var(--color-surface-subtle);
+  }
+
+  .circle-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  .circle-chip span.label {
+    color: var(--color-ink-soft);
+  }
+
+  .circle-chip span.meta {
+    color: var(--color-muted);
+    font-weight: 400;
+  }
+
+  .stack {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 28rem;
+  }
+
+  label {
+    display: grid;
+    gap: var(--space-2);
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  input:focus,
+  textarea:focus {
+    outline: 2px solid var(--color-highlight);
+    outline-offset: 2px;
+  }
+
+  .note {
+    padding: var(--space-4);
+    background: var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--color-muted);
+  }
+</style>
