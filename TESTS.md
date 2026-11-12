@@ -20,3 +20,4 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Admin email reply and campaign simulate without a provider key. (tests/stewards-platform.spec.ts)
 - [auto] A steward can RSVP to an event. (tests/stewards-platform.spec.ts)
 - [auto] An admin can add an FAQ item. (tests/stewards-platform.spec.ts)
+- [auto] Join/apply requires the Connect welcome survey fields (profile type, contact, regions, sector, interests, charter). (tests/stewards-auth.spec.ts)

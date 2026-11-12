@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
 import { getProfileBundle } from "../../lib/db";
+import { INTERESTS, PROFILE_TYPES, SECTORS } from "../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
@@ -9,23 +10,85 @@ if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
 const profile = await getProfileBundle(user.id);
 if (!profile) return Astro.redirect("/stewards/dashboard");
+
+const selectedInterests = new Set((profile.interests || "").split("|").filter(Boolean));
 ---
 <Base title="Profile" active="profile" user={user}>
   <h1>Your profile</h1>
   <p class="lede">Update how you appear to other stewards and what you receive.</p>
 
-  <form id="profile-form" class="stack" style="max-width: 32rem;">
+  <form id="profile-form" class="stack survey" style="max-width: 40rem;">
     <label>
       Display name
       <input name="display_name" required maxlength="100" value={profile.display_name} />
     </label>
+
+    <fieldset>
+      <legend>Type of profile</legend>
+      {PROFILE_TYPES.map((t) => (
+        <label class="check">
+          <input type="radio" name="profile_type" value={t.value} checked={profile.profile_type === t.value} />
+          {t.label}
+        </label>
+      ))}
+    </fieldset>
+
     <label>
-      Bio
-      <textarea name="bio" rows="4" maxlength="2000">{profile.bio}</textarea>
+      Contact
+      <span class="hint">Website, email, LinkedIn, Instagram, etc.</span>
+      <textarea name="contact_links" rows="3" maxlength="4000">{profile.contact_links}</textarea>
+    </label>
+
+    <label>
+      Location / regions
+      <span class="hint">Eg: Canada (national), Manitoba (provincial), or a neighbourhood (like Parkdale).</span>
+      <input name="regions" maxlength="500" value={profile.regions || profile.location} />
+    </label>
+
+    <label>
+      Address <span class="optional">(optional)</span>
+      <span class="hint">For a future geographic map.</span>
+      <input name="map_address" maxlength="500" value={profile.map_address} />
+    </label>
+
+    <label>
+      Sector
+      <select name="sector">
+        <option value="">Choose one…</option>
+        {SECTORS.map((s) => (
+          <option value={s} selected={profile.sector === s}>{s}</option>
+        ))}
+      </select>
     </label>
     <label>
-      Location
-      <input name="location" maxlength="120" value={profile.location} />
+      Other sector
+      <input name="sector_other" maxlength="200" value={profile.sector_other} />
+    </label>
+
+    <fieldset>
+      <legend>Areas of interest (up to 3)</legend>
+      <div class="interest-grid">
+        {INTERESTS.map((i) => (
+          <label class="check">
+            <input type="checkbox" name="interests" value={i} checked={selectedInterests.has(i)} />
+            {i}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+    <label>
+      Other area of interest
+      <input name="interest_other" maxlength="200" value={profile.interest_other} />
+    </label>
+
+    <label>
+      What else would you like to share?
+      <textarea name="about" rows="4" maxlength="4000">{profile.about || profile.bio}</textarea>
+    </label>
+
+    <label>
+      Short bio <span class="optional">(directory blurb)</span>
+      <textarea name="bio" rows="3" maxlength="2000">{profile.bio}</textarea>
     </label>
     <label>
       Organization / partner
@@ -64,11 +127,38 @@ if (!profile) return Astro.redirect("/stewards/dashboard");
     border-radius: var(--radius-md);
   }
 
+  fieldset {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  legend {
+    font-weight: 700;
+    padding: 0 var(--space-2);
+  }
+
+  .hint,
+  .optional {
+    display: block;
+    font-weight: 400;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: var(--space-1) 0 var(--space-2);
+  }
+
   .check {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-2);
     font-weight: 400;
+    margin: var(--space-2) 0;
+  }
+
+  .interest-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--space-1) var(--space-3);
   }
 </style>
 
@@ -77,6 +167,11 @@ if (!profile) return Astro.redirect("/stewards/dashboard");
   const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const interests = [...form.querySelectorAll<HTMLInputElement>('input[name="interests"]:checked')].map((el) => el.value);
+    if (interests.length > 3) {
+      status.textContent = "Please select at most 3 areas of interest.";
+      return;
+    }
     status.textContent = "Saving…";
     const fields = new FormData(form);
     const res = await fetch("/api/profile", {
@@ -85,12 +180,21 @@ if (!profile) return Astro.redirect("/stewards/dashboard");
       body: JSON.stringify({
         display_name: fields.get("display_name"),
         bio: fields.get("bio"),
-        location: fields.get("location"),
+        location: fields.get("regions"),
         partner_org: fields.get("partner_org"),
         visibility: fields.get("visibility"),
         allow_directory: fields.get("allow_directory") === "on",
         allow_messages: fields.get("allow_messages") === "on",
         email_updates: fields.get("email_updates") === "on",
+        profile_type: fields.get("profile_type") || "steward",
+        contact_links: fields.get("contact_links"),
+        regions: fields.get("regions"),
+        map_address: fields.get("map_address"),
+        sector: fields.get("sector"),
+        sector_other: fields.get("sector_other"),
+        interests,
+        interest_other: fields.get("interest_other"),
+        about: fields.get("about"),
       }),
     });
     const data = await res.json();

@@ -26,6 +26,15 @@ test("active steward can update profile preferences", async ({ request }) => {
       allow_directory: true,
       allow_messages: true,
       email_updates: true,
+      profile_type: "steward",
+      contact_links: "alex@weallcanada.local",
+      regions: "Quebec",
+      map_address: "",
+      sector: "Network",
+      sector_other: "",
+      interests: ["Community Economics", "Leadership"],
+      interest_other: "",
+      about: "Updated about for tests.",
     },
   });
   expect(res.status()).toBe(200);

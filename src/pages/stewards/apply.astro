@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
 import { turnstileSiteKey } from "../../lib/protect";
+import { INTERESTS, PROFILE_TYPES, SECTORS } from "../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (user?.status === "active") {
@@ -13,31 +14,112 @@ if (user?.status === "applicant") {
 
 const siteKey = turnstileSiteKey();
 ---
-<Base title="Apply" active="apply" user={user}>
-  <h1>Apply to become a steward</h1>
+<Base title="Join" active="apply" user={user}>
+  <h1>Join WEAll Canada to help transform the economy</h1>
   <p class="lede">
-    Open application — an admin will review and approve before you get full access.
+    Whether you already see how your work contributes to well-being economies or you are wondering how you fit in, WEAll Canada welcomes you to join our alliance.
   </p>
 
-  <form id="apply-form" class="stack">
+  <ul class="invite-list">
+    <li>You are (or want to be) helping create well-being economies in Canada</li>
+    <li>You want to participate in an adaptive learning &amp; coordination process involving a wide array of people and organizations</li>
+    <li>You acknowledge that none of us have ‘the solution’, but we all hold a piece of the puzzle</li>
+    <li>You see this process as multi-layered: involving personal mindset shift, relational learning, cultural evolution, as well as economic and policy change</li>
+    <li>You agree to our <a href="https://weallcanada.org/" target="_blank" rel="noreferrer">Living Charter</a></li>
+  </ul>
+
+  <div class="role-cards">
+    <p><strong>Stewards</strong> are individuals who participate in our learning journey and collaborate towards well-being economies.</p>
+    <p><strong>Partners</strong> are organizations who see well-being economies as part of the future they are working to create.</p>
+    <p class="meta">You can set up both, but they require different email addresses — you’ll do this survey for each.</p>
+  </div>
+
+  <form id="apply-form" class="stack survey">
+    <fieldset>
+      <legend>Type of profile</legend>
+      <p class="hint">Which kind of profile are you setting this up as?</p>
+      {PROFILE_TYPES.map((t) => (
+        <label class="check">
+          <input type="radio" name="profile_type" value={t.value} required />
+          {t.label}
+        </label>
+      ))}
+    </fieldset>
+
     <label>
       Full name
-      <input type="text" name="name" autocomplete="name" required maxlength="100" placeholder="Your name" />
+      <input type="text" name="name" autocomplete="name" required maxlength="100" />
     </label>
     <label>
       Email
-      <input type="email" name="email" autocomplete="email" required maxlength="200" placeholder="you@example.com" />
+      <input type="email" name="email" autocomplete="email" required maxlength="200" />
     </label>
     <label>
       Password
       <input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" />
     </label>
+
     <label>
-      Why do you want to join?
-      <textarea name="why" rows="4" required maxlength="2000" placeholder="A few sentences is plenty."></textarea>
+      Contact
+      <span class="hint">Website, email, LinkedIn, Instagram, etc. What’s the best way for folks in the alliance to connect with you? Share as many as you’d like!</span>
+      <textarea name="contact_links" rows="3" required maxlength="4000" placeholder="hello@example.org · https://…"></textarea>
     </label>
+
+    <label>
+      Location
+      <span class="hint">Eg: Canada (national), Manitoba (provincial), or a neighbourhood (like Parkdale). What regions does your work focus on?</span>
+      <input type="text" name="regions" required maxlength="500" />
+    </label>
+
+    <label>
+      Address <span class="optional">(optional)</span>
+      <span class="hint">Eg: Queen St. &amp; Bathurst St., Toronto — if you’d like to appear on a geographic map later.</span>
+      <input type="text" name="map_address" maxlength="500" />
+    </label>
+
+    <label>
+      Which sector best describes your work?
+      <select name="sector" required>
+        <option value="">Choose one…</option>
+        {SECTORS.map((s) => <option value={s}>{s}</option>)}
+      </select>
+    </label>
+    <label>
+      Other sector
+      <span class="hint">If you selected Other, please specify.</span>
+      <input type="text" name="sector_other" maxlength="200" />
+    </label>
+
+    <fieldset>
+      <legend>Which areas of interest best describe your work? (Select up to 3)</legend>
+      <div class="interest-grid">
+        {INTERESTS.map((i) => (
+          <label class="check">
+            <input type="checkbox" name="interests" value={i} />
+            {i}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+    <label>
+      Other area of interest
+      <span class="hint">If you selected Other, please specify.</span>
+      <input type="text" name="interest_other" maxlength="200" />
+    </label>
+
+    <label>
+      What else would you like to share about yourself?
+      <span class="hint">A free space to share as much or as little as you’d like — your work, keywords, or even a favourite poem.</span>
+      <textarea name="about" rows="5" required maxlength="4000"></textarea>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" name="charter_agreed" required />
+      I agree to the Living Charter
+    </label>
+
     {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
-    <button class="btn btn--primary" type="submit">Submit application</button>
+    <button class="btn btn--primary" type="submit">Join the alliance</button>
     <p id="form-status" role="status"></p>
   </form>
 
@@ -48,12 +130,88 @@ const siteKey = turnstileSiteKey();
 
 {siteKey && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
 
+<style>
+  .invite-list {
+    max-width: 40rem;
+    padding-left: 1.2rem;
+    color: var(--color-ink-soft);
+  }
+
+  .role-cards {
+    max-width: 40rem;
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
+    background: var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .role-cards p {
+    margin-bottom: var(--space-3);
+  }
+
+  .survey {
+    max-width: 40rem;
+  }
+
+  fieldset {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  legend {
+    font-weight: 700;
+    padding: 0 var(--space-2);
+  }
+
+  .hint,
+  .meta,
+  .optional {
+    display: block;
+    font-weight: 400;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: var(--space-1) 0 var(--space-2);
+  }
+
+  .check {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+    font-weight: 400;
+    margin: var(--space-2) 0;
+  }
+
+  .interest-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--space-1) var(--space-3);
+  }
+
+  select {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+</style>
+
 <script>
   const form = document.querySelector<HTMLFormElement>("#apply-form")!;
   const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const interests = [...form.querySelectorAll<HTMLInputElement>('input[name="interests"]:checked')].map((el) => el.value);
+    if (interests.length === 0) {
+      status.textContent = "Select up to 3 areas of interest (at least one).";
+      return;
+    }
+    if (interests.length > 3) {
+      status.textContent = "Please select at most 3 areas of interest.";
+      return;
+    }
+
     status.textContent = "Submitting…";
     const fields = new FormData(form);
     const res = await fetch("/api/apply", {
@@ -63,7 +221,16 @@ const siteKey = turnstileSiteKey();
         name: fields.get("name"),
         email: fields.get("email"),
         password: fields.get("password"),
-        why: fields.get("why"),
+        profile_type: fields.get("profile_type"),
+        contact_links: fields.get("contact_links"),
+        regions: fields.get("regions"),
+        map_address: fields.get("map_address"),
+        sector: fields.get("sector"),
+        sector_other: fields.get("sector_other"),
+        interests,
+        interest_other: fields.get("interest_other"),
+        about: fields.get("about"),
+        charter_agreed: fields.get("charter_agreed") === "on",
         turnstileToken: fields.get("cf-turnstile-response"),
       }),
     });

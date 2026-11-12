@@ -9,6 +9,10 @@ if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
 
 const pending = await listPendingApplications();
 const circleJoins = await listPendingCircleJoins();
+
+function interestList(raw: string) {
+  return (raw || "").split("|").filter(Boolean).join(", ");
+}
 ---
 <Base title="Admin" active="admin" user={user}>
   <h1>Admin</h1>
@@ -23,8 +27,25 @@ const circleJoins = await listPendingCircleJoins();
         <li class="app-card" data-kind="application" data-id={app.id}>
           <div>
             <strong>{app.display_name || "Applicant"}</strong>
-            <div class="meta">{app.email} · applied {app.created_at.slice(0, 10)}</div>
-            <p>{app.why}</p>
+            <div class="meta">
+              {app.email} · {app.profile_type === "partner" ? "Partner" : "Steward"} · applied {app.created_at.slice(0, 10)}
+            </div>
+            {app.contact_links && <p><strong>Contact:</strong> {app.contact_links}</p>}
+            {app.regions && <p><strong>Location:</strong> {app.regions}</p>}
+            {app.map_address && <p><strong>Address:</strong> {app.map_address}</p>}
+            {app.sector && (
+              <p>
+                <strong>Sector:</strong> {app.sector}
+                {app.sector === "Other" && app.sector_other ? ` — ${app.sector_other}` : ""}
+              </p>
+            )}
+            {app.interests && (
+              <p>
+                <strong>Interests:</strong> {interestList(app.interests)}
+                {app.interest_other ? ` — ${app.interest_other}` : ""}
+              </p>
+            )}
+            <p>{app.about || app.why}</p>
           </div>
           <div class="app-actions">
             <button class="btn btn--primary" type="button" data-decision="approved">Approve</button>

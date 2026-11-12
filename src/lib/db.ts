@@ -27,6 +27,16 @@ export interface ApplicationRow {
   created_at: string;
   email: string;
   display_name: string;
+  profile_type: string;
+  contact_links: string;
+  regions: string;
+  map_address: string;
+  sector: string;
+  sector_other: string;
+  interests: string;
+  interest_other: string;
+  about: string;
+  charter_agreed: number;
 }
 
 export async function listMessages(limit = 50): Promise<Message[]> {
@@ -127,6 +137,16 @@ export async function createApplicant(input: {
   passwordHash: string;
   displayName: string;
   why: string;
+  profile_type: "steward" | "partner";
+  contact_links: string;
+  regions: string;
+  map_address: string;
+  sector: string;
+  sector_other: string;
+  interests: string;
+  interest_other: string;
+  about: string;
+  charter_agreed: boolean;
 }): Promise<{ userId: number; applicationId: number }> {
   const user = await env.DB.prepare(
     `INSERT INTO users (email, password_hash, status)
@@ -138,19 +158,50 @@ export async function createApplicant(input: {
   if (!user) throw new Error("Could not create user");
 
   await env.DB.prepare(
-    `INSERT INTO profiles (user_id, display_name) VALUES (?, ?)`,
+    `INSERT INTO profiles (
+       user_id, display_name, profile_type, contact_links, regions, map_address,
+       sector, sector_other, interests, interest_other, about, bio
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(user.id, input.displayName.trim())
+    .bind(
+      user.id,
+      input.displayName.trim(),
+      input.profile_type,
+      input.contact_links,
+      input.regions,
+      input.map_address,
+      input.sector,
+      input.sector_other,
+      input.interests,
+      input.interest_other,
+      input.about,
+      input.about,
+    )
     .run();
 
   await env.DB.prepare(`INSERT INTO preferences (user_id) VALUES (?)`).bind(user.id).run();
 
   const application = await env.DB.prepare(
-    `INSERT INTO applications (user_id, why, status)
-     VALUES (?, ?, 'pending')
+    `INSERT INTO applications (
+       user_id, why, status, profile_type, contact_links, regions, map_address,
+       sector, sector_other, interests, interest_other, about, charter_agreed
+     ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
-    .bind(user.id, input.why.trim())
+    .bind(
+      user.id,
+      input.why.trim() || input.about.trim(),
+      input.profile_type,
+      input.contact_links,
+      input.regions,
+      input.map_address,
+      input.sector,
+      input.sector_other,
+      input.interests,
+      input.interest_other,
+      input.about,
+      input.charter_agreed ? 1 : 0,
+    )
     .first<{ id: number }>();
   if (!application) throw new Error("Could not create application");
 
@@ -159,7 +210,9 @@ export async function createApplicant(input: {
 
 export async function listPendingApplications(): Promise<ApplicationRow[]> {
   const { results } = await env.DB.prepare(
-    `SELECT a.id, a.user_id, a.why, a.status, a.created_at, u.email, p.display_name
+    `SELECT a.id, a.user_id, a.why, a.status, a.created_at, u.email, p.display_name,
+            a.profile_type, a.contact_links, a.regions, a.map_address, a.sector, a.sector_other,
+            a.interests, a.interest_other, a.about, a.charter_agreed
      FROM applications a
      JOIN users u ON u.id = a.user_id
      LEFT JOIN profiles p ON p.user_id = u.id
@@ -264,11 +317,22 @@ export interface ProfileBundle {
   allow_directory: number;
   allow_messages: number;
   email_updates: number;
+  profile_type: string;
+  contact_links: string;
+  regions: string;
+  map_address: string;
+  sector: string;
+  sector_other: string;
+  interests: string;
+  interest_other: string;
+  about: string;
 }
 
 export async function getProfileBundle(userId: number): Promise<ProfileBundle | null> {
   return env.DB.prepare(
     `SELECT p.display_name, p.bio, p.location, p.partner_org, p.visibility,
+            p.profile_type, p.contact_links, p.regions, p.map_address, p.sector, p.sector_other,
+            p.interests, p.interest_other, p.about,
             pref.allow_directory, pref.allow_messages, pref.email_updates
      FROM profiles p
      JOIN preferences pref ON pref.user_id = p.user_id
@@ -282,7 +346,10 @@ export async function updateProfileBundle(userId: number, input: ProfileBundle):
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await env.DB.prepare(
     `UPDATE profiles
-     SET display_name = ?, bio = ?, location = ?, partner_org = ?, visibility = ?, updated_at = ?
+     SET display_name = ?, bio = ?, location = ?, partner_org = ?, visibility = ?,
+         profile_type = ?, contact_links = ?, regions = ?, map_address = ?,
+         sector = ?, sector_other = ?, interests = ?, interest_other = ?, about = ?,
+         updated_at = ?
      WHERE user_id = ?`,
   )
     .bind(
@@ -291,6 +358,15 @@ export async function updateProfileBundle(userId: number, input: ProfileBundle):
       input.location,
       input.partner_org,
       input.visibility,
+      input.profile_type,
+      input.contact_links,
+      input.regions,
+      input.map_address,
+      input.sector,
+      input.sector_other,
+      input.interests,
+      input.interest_other,
+      input.about,
       now,
       userId,
     )
