@@ -22,3 +22,23 @@ UPDATE profiles SET
   interest_other = '',
   about = 'Sample steward for local testing.'
 WHERE user_id = 2;
+
+-- Operator test account (staging apply + local if present): circles + RSVP for dashboard testing.
+INSERT OR IGNORE INTO circle_members (circle_id, user_id, role)
+SELECT 1, u.id, 'member'
+FROM users u
+WHERE lower(u.email) = 'naryan@gmail.com';
+
+INSERT OR IGNORE INTO circle_members (circle_id, user_id, role)
+SELECT 2, u.id, 'member'
+FROM users u
+WHERE lower(u.email) = 'naryan@gmail.com';
+
+INSERT OR IGNORE INTO event_rsvps (event_id, user_id, status)
+SELECT 1, u.id, 'going'
+FROM users u
+WHERE lower(u.email) = 'naryan@gmail.com';
+
+-- Ensure local admin also has enough circle/event signal for dashboard demos.
+INSERT OR IGNORE INTO event_rsvps (event_id, user_id, status) VALUES
+  (1, 1, 'going');

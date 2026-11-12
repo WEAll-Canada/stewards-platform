@@ -16,44 +16,64 @@ const variant = (token: string) =>
     : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
 ---
 <Base title="Dashboard" active="dashboard" user={user}>
-  <h1>Welcome, {user.display_name || "steward"}</h1>
-  <p class="lede">Your home base across circles, messages, and events.</p>
+  <header class="dash-intro">
+    <h1>Welcome, {user.display_name || "steward"}</h1>
+    <p class="lede">Your home base across circles, messages, and events.</p>
+  </header>
 
-  <div class="bento">
-    <section class="panel panel--cyan">
-      <h2>Alliance</h2>
-      <p>Browse the <a href="/stewards/directory">directory</a> and read the <a href="/stewards/faq">FAQ</a>.</p>
+  <div class="dash-grid">
+    <section class="dash-block dash-block--wide">
+      <div class="dash-block__mark" aria-hidden="true">
+        <WeAllCircle variant="master" size={40} animate={false} />
+      </div>
+      <div class="dash-block__body">
+        <h2>Alliance</h2>
+        <p>
+          Browse the <a href="/stewards/directory">directory</a>
+          and read the <a href="/stewards/faq">FAQ</a>.
+        </p>
+      </div>
     </section>
-    <section class="panel panel--blue">
+
+    <section class="dash-block">
       <h2>Your circles</h2>
       {circles.length === 0 ? (
         <p>No memberships yet. <a href="/stewards/circles">Request to join</a>.</p>
       ) : (
-        <div class="circle-row" style="border:0;margin:0;padding:0">
+        <ul class="circle-list">
           {circles.map((c) => (
-            <div class="circle-chip">
-              <WeAllCircle variant={variant(c.color_token)} size={24} animate={false} />
-              <span class="label">{c.name}</span>
-              <span class="meta">{c.role}</span>
-            </div>
+            <li>
+              <WeAllCircle variant={variant(c.color_token)} size={28} animate={false} />
+              <div>
+                <a href="/stewards/circles">{c.name}</a>
+                <div class="meta">{c.role}</div>
+              </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </section>
-    <section class="panel panel--orange">
+
+    <section class="dash-block">
       <h2>Messages</h2>
-      <p><a href="/stewards/messages">Open conversations</a></p>
+      <p class="dash-cta">
+        <a href="/stewards/messages">Open conversations</a>
+      </p>
     </section>
-    <section class="panel panel--yellow">
+
+    <section class="dash-block dash-block--wide">
       <h2>Upcoming</h2>
       {upcoming.length === 0 ? (
         <p>No events yet. <a href="/stewards/events">See calendar</a>.</p>
       ) : (
-        <ul class="mini">
+        <ul class="event-list">
           {upcoming.map((e) => (
             <li>
-              <a href="/stewards/events">{e.title}</a>
-              <div class="meta">{e.starts_at.slice(0, 10)}</div>
+              <time datetime={e.starts_at}>{e.starts_at.slice(0, 10)}</time>
+              <div>
+                <a href="/stewards/events">{e.title}</a>
+                {e.circle_name && <div class="meta">{e.circle_name}</div>}
+              </div>
             </li>
           ))}
         </ul>
@@ -63,48 +83,88 @@ const variant = (token: string) =>
 </Base>
 
 <style>
-  .bento {
+  .dash-intro {
+    margin-bottom: var(--space-8);
+  }
+
+  .dash-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    grid-template-columns: 1.2fr 1fr;
+    gap: var(--space-8) var(--space-12);
+    align-items: start;
+  }
+
+  .dash-block--wide {
+    grid-column: 1 / -1;
+  }
+
+  .dash-block--wide.dash-block:first-of-type {
+    display: grid;
+    grid-template-columns: auto 1fr;
     gap: var(--space-4);
-    margin-top: var(--space-6);
+    align-items: start;
+    padding-bottom: var(--space-6);
+    border-bottom: 1px solid var(--color-surface-subtle);
   }
 
-  .panel {
-    background: var(--color-surface);
-    border: 1px solid var(--color-surface-subtle);
-    border-top-width: 4px;
-    border-radius: var(--radius-md);
-    padding: var(--space-4);
-    min-height: 9rem;
+  .dash-block h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    letter-spacing: -0.02em;
+    margin: 0 0 var(--space-3);
   }
 
-  .panel h2 {
-    font-size: var(--text-md);
-    margin: 0 0 var(--space-2);
-  }
-
-  .panel p,
-  .mini {
+  .dash-block p,
+  .dash-cta {
     margin: 0;
-    color: var(--color-muted);
-    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
+    max-width: 36rem;
   }
 
-  .mini {
+  .dash-block__mark {
+    line-height: 0;
+    margin-top: 0.15rem;
+  }
+
+  .circle-list,
+  .event-list {
     list-style: none;
     padding: 0;
+    margin: 0;
     display: grid;
-    gap: var(--space-2);
+    gap: var(--space-3);
+  }
+
+  .circle-list li,
+  .event-list li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-3);
+    align-items: center;
+  }
+
+  .event-list time {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-blue);
+    min-width: 6.5rem;
   }
 
   .meta {
     color: var(--color-muted);
     font-size: var(--text-xs);
+    text-transform: capitalize;
   }
 
-  .panel--cyan { border-top-color: var(--color-cyan); }
-  .panel--blue { border-top-color: var(--color-blue); }
-  .panel--orange { border-top-color: var(--color-orange); }
-  .panel--yellow { border-top-color: var(--color-yellow); }
+  @media (max-width: 720px) {
+    .dash-grid {
+      grid-template-columns: 1fr;
+      gap: var(--space-8);
+    }
+
+    .dash-block--wide {
+      grid-column: auto;
+    }
+  }
 </style>

@@ -1,16 +1,13 @@
 ---
-import Base from "../layouts/Base.astro";
 import { currentUser } from "../lib/auth";
 
+// Site root mirrors the Connect front door.
 const user = await currentUser(Astro.request);
+if (user?.status === "active") {
+  return Astro.redirect("/stewards/dashboard");
+}
+if (user?.status === "applicant") {
+  return Astro.redirect("/stewards/pending");
+}
+return Astro.redirect("/stewards/apply");
 ---
-<Base title="WeAll Canada Stewards" active="home" user={user}>
-  <h1 class="display">WeAll Canada</h1>
-  <p class="lede">
-    Collaboration and learning for stewards building wellbeing economies.
-  </p>
-  <div class="hero-actions">
-    <a class="btn btn--primary" href="/stewards">Enter Stewards Platform</a>
-    <a class="btn btn--accent" href="/stewards/apply">Apply</a>
-  </div>
-</Base>

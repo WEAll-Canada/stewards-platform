@@ -10,33 +10,33 @@ interface Props {
 const { active, user = null } = Astro.props;
 const isAdmin = user?.roles.includes("admin");
 const canEmail = isAdmin || user?.roles.includes("circle_lead");
+const brandHref = user?.status === "active" ? "/stewards/dashboard" : "/stewards";
 ---
 
 <header class="site-header">
   <div class="site-header__inner">
-    <a class="site-header__brand" href="/stewards" aria-label="WeAll Canada Stewards home">
+    <a class="site-header__brand" href={brandHref} aria-label="WeAll Canada home">
       <WeAllCircle size={36} animate={true} />
     </a>
-    <nav class="site-header__nav" aria-label="Primary">
-      <a href="/stewards" class:list={{ "is-active": active === "home" }}>Stewards</a>
-      {user?.status === "active" && (
-        <>
-          <a href="/stewards/dashboard" class:list={{ "is-active": active === "dashboard" }}>Dashboard</a>
-          <a href="/stewards/directory" class:list={{ "is-active": active === "directory" }}>Directory</a>
-          <a href="/stewards/circles" class:list={{ "is-active": active === "circles" }}>Circles</a>
-          <a href="/stewards/events" class:list={{ "is-active": active === "events" }}>Events</a>
-          <a href="/stewards/messages" class:list={{ "is-active": active === "messages" }}>Messages</a>
-          <a href="/stewards/profile" class:list={{ "is-active": active === "profile" }}>Profile</a>
-          <a href="/stewards/faq" class:list={{ "is-active": active === "faq" }}>FAQ</a>
-        </>
-      )}
-      {canEmail && (
-        <a href="/stewards/email" class:list={{ "is-active": active === "email" }}>Email</a>
-      )}
-      {isAdmin && (
-        <a href="/stewards/admin" class:list={{ "is-active": active === "admin" }}>Admin</a>
-      )}
-    </nav>
+    {user?.status === "active" ? (
+      <nav class="site-header__nav" aria-label="Primary">
+        <a href="/stewards/dashboard" class:list={{ "is-active": active === "dashboard" }}>Dashboard</a>
+        <a href="/stewards/directory" class:list={{ "is-active": active === "directory" }}>Directory</a>
+        <a href="/stewards/circles" class:list={{ "is-active": active === "circles" }}>Circles</a>
+        <a href="/stewards/events" class:list={{ "is-active": active === "events" }}>Events</a>
+        <a href="/stewards/messages" class:list={{ "is-active": active === "messages" }}>Messages</a>
+        <a href="/stewards/profile" class:list={{ "is-active": active === "profile" }}>Profile</a>
+        <a href="/stewards/faq" class:list={{ "is-active": active === "faq" }}>FAQ</a>
+        {canEmail && (
+          <a href="/stewards/email" class:list={{ "is-active": active === "email" }}>Email</a>
+        )}
+        {isAdmin && (
+          <a href="/stewards/admin" class:list={{ "is-active": active === "admin" }}>Admin</a>
+        )}
+      </nav>
+    ) : (
+      <nav class="site-header__nav" aria-label="Primary"></nav>
+    )}
     <div class="site-header__actions">
       {user ? (
         <>
@@ -47,7 +47,7 @@ const canEmail = isAdmin || user?.roles.includes("circle_lead");
         </>
       ) : (
         <>
-          <a class="btn btn--accent" href="/stewards/apply">Apply</a>
+          <a class="btn btn--accent" href="/stewards/apply">Apply to join</a>
           <a class="btn btn--primary" href="/stewards/login">Login</a>
         </>
       )}
