@@ -12,114 +12,193 @@ const profile = await getProfileBundle(user.id);
 if (!profile) return Astro.redirect("/stewards/dashboard");
 
 const selectedInterests = new Set((profile.interests || "").split("|").filter(Boolean));
+const tabParam = Astro.url.searchParams.get("tab");
+const activeTab = tabParam === "settings" ? "settings" : "profile";
 ---
-<Base title="Profile" active="profile" user={user}>
-  <h1>Your profile</h1>
+<Base title={activeTab === "settings" ? "Settings" : "Profile"} active="profile" user={user}>
+  <h1>Your account</h1>
   <p class="lede">Update how you appear to other stewards and what you receive.</p>
 
-  <form id="profile-form" class="stack survey" style="max-width: 40rem;">
-    <label>
-      Display name
-      <input name="display_name" required maxlength="100" value={profile.display_name} />
-    </label>
+  <div class="tabs" role="tablist" aria-label="Account sections">
+    <a
+      class:list={["tabs__tab", { "is-active": activeTab === "profile" }]}
+      href="/stewards/profile?tab=profile"
+      role="tab"
+      aria-selected={activeTab === "profile"}
+      id="tab-profile"
+    >
+      Profile
+    </a>
+    <a
+      class:list={["tabs__tab", { "is-active": activeTab === "settings" }]}
+      href="/stewards/profile?tab=settings"
+      role="tab"
+      aria-selected={activeTab === "settings"}
+      id="tab-settings"
+    >
+      Settings
+    </a>
+  </div>
 
-    <fieldset>
-      <legend>Type of profile</legend>
-      {PROFILE_TYPES.map((t) => (
-        <label class="check">
-          <input type="radio" name="profile_type" value={t.value} checked={profile.profile_type === t.value} />
-          {t.label}
+  {activeTab === "profile" ? (
+    <section class="tab-panel" role="tabpanel" aria-labelledby="tab-profile">
+      <form id="profile-form" class="stack survey" style="max-width: 40rem;">
+        <label>
+          Display name
+          <input name="display_name" required maxlength="100" value={profile.display_name} />
         </label>
-      ))}
-    </fieldset>
 
-    <label>
-      Contact
-      <span class="hint">Website, email, LinkedIn, Instagram, etc.</span>
-      <textarea name="contact_links" rows="3" maxlength="4000">{profile.contact_links}</textarea>
-    </label>
+        <fieldset>
+          <legend>Type of profile</legend>
+          {PROFILE_TYPES.map((t) => (
+            <label class="check">
+              <input type="radio" name="profile_type" value={t.value} checked={profile.profile_type === t.value} />
+              {t.label}
+            </label>
+          ))}
+        </fieldset>
 
-    <label>
-      Location / regions
-      <span class="hint">Eg: Canada (national), Manitoba (provincial), or a neighbourhood (like Parkdale).</span>
-      <input name="regions" maxlength="500" value={profile.regions || profile.location} />
-    </label>
+        <label>
+          Contact
+          <span class="hint">Website, email, LinkedIn, Instagram, etc.</span>
+          <textarea name="contact_links" rows="3" maxlength="4000">{profile.contact_links}</textarea>
+        </label>
 
-    <label>
-      Address <span class="optional">(optional)</span>
-      <span class="hint">For a future geographic map.</span>
-      <input name="map_address" maxlength="500" value={profile.map_address} />
-    </label>
+        <label>
+          Location / regions
+          <span class="hint">Eg: Canada (national), Manitoba (provincial), or a neighbourhood (like Parkdale).</span>
+          <input name="regions" maxlength="500" value={profile.regions || profile.location} />
+        </label>
 
-    <label>
-      Sector
-      <select name="sector">
-        <option value="">Choose one…</option>
-        {SECTORS.map((s) => (
-          <option value={s} selected={profile.sector === s}>{s}</option>
-        ))}
-      </select>
-    </label>
-    <label>
-      Other sector
-      <input name="sector_other" maxlength="200" value={profile.sector_other} />
-    </label>
+        <label>
+          Address <span class="optional">(optional)</span>
+          <span class="hint">For a future geographic map.</span>
+          <input name="map_address" maxlength="500" value={profile.map_address} />
+        </label>
 
-    <fieldset>
-      <legend>Areas of interest (up to 3)</legend>
-      <div class="interest-grid">
-        {INTERESTS.map((i) => (
-          <label class="check">
-            <input type="checkbox" name="interests" value={i} checked={selectedInterests.has(i)} />
-            {i}
-          </label>
-        ))}
-      </div>
-    </fieldset>
-    <label>
-      Other area of interest
-      <input name="interest_other" maxlength="200" value={profile.interest_other} />
-    </label>
+        <label>
+          Sector
+          <select name="sector">
+            <option value="">Choose one…</option>
+            {SECTORS.map((s) => (
+              <option value={s} selected={profile.sector === s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Other sector
+          <input name="sector_other" maxlength="200" value={profile.sector_other} />
+        </label>
 
-    <label>
-      What else would you like to share?
-      <textarea name="about" rows="4" maxlength="4000">{profile.about || profile.bio}</textarea>
-    </label>
+        <fieldset>
+          <legend>Areas of interest (up to 3)</legend>
+          <div class="interest-grid">
+            {INTERESTS.map((i) => (
+              <label class="check">
+                <input type="checkbox" name="interests" value={i} checked={selectedInterests.has(i)} />
+                {i}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label>
+          Other area of interest
+          <input name="interest_other" maxlength="200" value={profile.interest_other} />
+        </label>
 
-    <label>
-      Short bio <span class="optional">(directory blurb)</span>
-      <textarea name="bio" rows="3" maxlength="2000">{profile.bio}</textarea>
-    </label>
-    <label>
-      Organization / partner
-      <input name="partner_org" maxlength="120" value={profile.partner_org} />
-    </label>
-    <label>
-      Profile visibility
-      <select name="visibility">
-        <option value="stewards" selected={profile.visibility === "stewards"}>Stewards only</option>
-        <option value="public" selected={profile.visibility === "public"}>Public</option>
-        <option value="private" selected={profile.visibility === "private"}>Private</option>
-      </select>
-    </label>
-    <label class="check">
-      <input type="checkbox" name="allow_directory" checked={profile.allow_directory === 1} />
-      Show me in the alliance directory
-    </label>
-    <label class="check">
-      <input type="checkbox" name="allow_messages" checked={profile.allow_messages === 1} />
-      Allow messages from other stewards
-    </label>
-    <label class="check">
-      <input type="checkbox" name="email_updates" checked={profile.email_updates === 1} />
-      Email updates and campaigns
-    </label>
-    <button class="btn btn--primary" type="submit">Save</button>
-    <p id="form-status" role="status"></p>
-  </form>
+        <label>
+          What else would you like to share?
+          <textarea name="about" rows="4" maxlength="4000">{profile.about || profile.bio}</textarea>
+        </label>
+
+        <label>
+          Short bio <span class="optional">(directory blurb)</span>
+          <textarea name="bio" rows="3" maxlength="2000">{profile.bio}</textarea>
+        </label>
+        <label>
+          Organization / partner
+          <input name="partner_org" maxlength="120" value={profile.partner_org} />
+        </label>
+
+        <input type="hidden" name="visibility" value={profile.visibility} />
+        <input type="hidden" name="allow_directory" value={profile.allow_directory === 1 ? "on" : ""} />
+        <input type="hidden" name="allow_messages" value={profile.allow_messages === 1 ? "on" : ""} />
+        <input type="hidden" name="email_updates" value={profile.email_updates === 1 ? "on" : ""} />
+
+        <button class="btn btn--primary" type="submit">Save profile</button>
+        <p id="form-status" role="status"></p>
+      </form>
+    </section>
+  ) : (
+    <section class="tab-panel" role="tabpanel" aria-labelledby="tab-settings">
+      <form id="settings-form" class="stack" style="max-width: 32rem;">
+        <input type="hidden" name="display_name" value={profile.display_name} />
+        <input type="hidden" name="bio" value={profile.bio} />
+        <input type="hidden" name="regions" value={profile.regions || profile.location} />
+        <input type="hidden" name="partner_org" value={profile.partner_org} />
+        <input type="hidden" name="profile_type" value={profile.profile_type || "steward"} />
+        <input type="hidden" name="contact_links" value={profile.contact_links} />
+        <input type="hidden" name="map_address" value={profile.map_address} />
+        <input type="hidden" name="sector" value={profile.sector} />
+        <input type="hidden" name="sector_other" value={profile.sector_other} />
+        <input type="hidden" name="interest_other" value={profile.interest_other} />
+        <input type="hidden" name="about" value={profile.about} />
+        {[...selectedInterests].map((i) => <input type="hidden" name="interests" value={i} />)}
+
+        <label>
+          Profile visibility
+          <select name="visibility">
+            <option value="stewards" selected={profile.visibility === "stewards"}>Stewards only</option>
+            <option value="public" selected={profile.visibility === "public"}>Public</option>
+            <option value="private" selected={profile.visibility === "private"}>Private</option>
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="allow_directory" checked={profile.allow_directory === 1} />
+          Show me in the alliance directory
+        </label>
+        <label class="check">
+          <input type="checkbox" name="allow_messages" checked={profile.allow_messages === 1} />
+          Allow messages from other stewards
+        </label>
+        <label class="check">
+          <input type="checkbox" name="email_updates" checked={profile.email_updates === 1} />
+          Email updates and campaigns
+        </label>
+        <button class="btn btn--primary" type="submit">Save settings</button>
+        <p id="settings-status" role="status"></p>
+      </form>
+    </section>
+  )}
 </Base>
 
 <style>
+  .tabs {
+    display: flex;
+    gap: var(--space-2);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    margin: var(--space-6) 0;
+  }
+
+  .tabs__tab {
+    text-decoration: none;
+    color: var(--color-muted);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+
+  .tabs__tab.is-active {
+    color: var(--color-ink);
+    border-bottom-color: var(--color-cyan);
+  }
+
+  .tab-panel {
+    margin-top: var(--space-4);
+  }
+
   select {
     font: inherit;
     padding: 0.65rem 0.75rem;
@@ -163,17 +242,29 @@ const selectedInterests = new Set((profile.interests || "").split("|").filter(Bo
 </style>
 
 <script>
-  const form = document.querySelector<HTMLFormElement>("#profile-form")!;
-  const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const interests = [...form.querySelectorAll<HTMLInputElement>('input[name="interests"]:checked')].map((el) => el.value);
-    if (interests.length > 3) {
+  async function saveAccount(form: HTMLFormElement, status: HTMLParagraphElement) {
+    const interests = [...form.querySelectorAll<HTMLInputElement>('input[name="interests"]')]
+      .filter((el) => el.type === "hidden" || el.checked)
+      .map((el) => el.value)
+      .filter(Boolean);
+    const unique = [...new Set(interests)].slice(0, 3);
+    if (unique.length > 3) {
       status.textContent = "Please select at most 3 areas of interest.";
       return;
     }
+
     status.textContent = "Saving…";
     const fields = new FormData(form);
+    const allowDirectory =
+      form.querySelector<HTMLInputElement>('input[name="allow_directory"][type="checkbox"]')?.checked ??
+      fields.get("allow_directory") === "on";
+    const allowMessages =
+      form.querySelector<HTMLInputElement>('input[name="allow_messages"][type="checkbox"]')?.checked ??
+      fields.get("allow_messages") === "on";
+    const emailUpdates =
+      form.querySelector<HTMLInputElement>('input[name="email_updates"][type="checkbox"]')?.checked ??
+      fields.get("email_updates") === "on";
+
     const res = await fetch("/api/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -183,21 +274,39 @@ const selectedInterests = new Set((profile.interests || "").split("|").filter(Bo
         location: fields.get("regions"),
         partner_org: fields.get("partner_org"),
         visibility: fields.get("visibility"),
-        allow_directory: fields.get("allow_directory") === "on",
-        allow_messages: fields.get("allow_messages") === "on",
-        email_updates: fields.get("email_updates") === "on",
+        allow_directory: allowDirectory,
+        allow_messages: allowMessages,
+        email_updates: emailUpdates,
         profile_type: fields.get("profile_type") || "steward",
         contact_links: fields.get("contact_links"),
         regions: fields.get("regions"),
         map_address: fields.get("map_address"),
         sector: fields.get("sector"),
         sector_other: fields.get("sector_other"),
-        interests,
+        interests: unique,
         interest_other: fields.get("interest_other"),
         about: fields.get("about"),
       }),
     });
     const data = await res.json();
     status.textContent = res.ok ? "Saved." : (data.error ?? "Something went wrong.");
-  });
+  }
+
+  const profileForm = document.querySelector<HTMLFormElement>("#profile-form");
+  const profileStatus = document.querySelector<HTMLParagraphElement>("#form-status");
+  if (profileForm && profileStatus) {
+    profileForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveAccount(profileForm, profileStatus);
+    });
+  }
+
+  const settingsForm = document.querySelector<HTMLFormElement>("#settings-form");
+  const settingsStatus = document.querySelector<HTMLParagraphElement>("#settings-status");
+  if (settingsForm && settingsStatus) {
+    settingsForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveAccount(settingsForm, settingsStatus);
+    });
+  }
 </script>

@@ -11,6 +11,7 @@ const { active, user = null } = Astro.props;
 const isAdmin = user?.roles.includes("admin");
 const canEmail = isAdmin || user?.roles.includes("circle_lead");
 const brandHref = user?.status === "active" ? "/stewards/dashboard" : "/stewards";
+const accountLabel = user?.display_name || user?.email || "Account";
 ---
 
 <header class="site-header">
@@ -25,7 +26,6 @@ const brandHref = user?.status === "active" ? "/stewards/dashboard" : "/stewards
         <a href="/stewards/circles" class:list={{ "is-active": active === "circles" }}>Circles</a>
         <a href="/stewards/events" class:list={{ "is-active": active === "events" }}>Events</a>
         <a href="/stewards/messages" class:list={{ "is-active": active === "messages" }}>Messages</a>
-        <a href="/stewards/profile" class:list={{ "is-active": active === "profile" }}>Profile</a>
         <a href="/stewards/faq" class:list={{ "is-active": active === "faq" }}>FAQ</a>
         {canEmail && (
           <a href="/stewards/email" class:list={{ "is-active": active === "email" }}>Email</a>
@@ -39,12 +39,36 @@ const brandHref = user?.status === "active" ? "/stewards/dashboard" : "/stewards
     )}
     <div class="site-header__actions">
       {user ? (
-        <>
-          <span class="site-header__who">{user.display_name || user.email}</span>
-          <form method="post" action="/api/logout">
-            <button class="btn btn--quiet" type="submit">Log out</button>
-          </form>
-        </>
+        <div class="account-menu" data-account-menu>
+          <button
+            class="account-menu__trigger"
+            type="button"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-controls="account-menu-panel"
+            id="account-menu-trigger"
+          >
+            <span class="account-menu__name">{accountLabel}</span>
+            <svg class="account-menu__caret" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+          <div class="account-menu__panel" id="account-menu-panel" role="menu" hidden>
+            <a role="menuitem" href="/stewards/profile?tab=profile">Edit profile</a>
+            <a role="menuitem" href="/stewards/profile?tab=settings" class="account-menu__with-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.07 7.07 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.22-1.14.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.58a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.43.34.68.22l2.39-.96c.49.41 1.04.72 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.22 1.14-.53 1.63-.94l2.39.96c.25.12.54.02.68-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+                ></path>
+              </svg>
+              Settings
+            </a>
+            <form method="post" action="/api/logout" role="none">
+              <button role="menuitem" type="submit">Log out</button>
+            </form>
+          </div>
+        </div>
       ) : (
         <>
           <a class="btn btn--accent" href="/stewards/apply">Apply to join</a>
@@ -101,18 +125,114 @@ const brandHref = user?.status === "active" ? "/stewards/dashboard" : "/stewards
     gap: var(--space-2);
   }
 
-  .site-header__who {
+  .account-menu {
+    position: relative;
+  }
+
+  .account-menu__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font: inherit;
+    font-weight: 700;
     font-size: var(--text-sm);
-    color: var(--color-muted);
-    max-width: 10rem;
+    color: var(--color-ink);
+    background: transparent;
+    border: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    max-width: 14rem;
+  }
+
+  .account-menu__trigger:hover,
+  .account-menu__trigger[aria-expanded="true"] {
+    background: var(--color-surface-subtle);
+  }
+
+  .account-menu__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  @media (max-width: 640px) {
-    .site-header__who {
-      display: none;
-    }
+  .account-menu__panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    min-width: 12.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    padding: var(--space-2);
+    z-index: 40;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .account-menu__panel[hidden] {
+    display: none;
+  }
+
+  .account-menu__panel a,
+  .account-menu__panel button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-ink-soft);
+    text-decoration: none;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.65rem;
+    cursor: pointer;
+  }
+
+  .account-menu__panel a:hover,
+  .account-menu__panel button:hover {
+    background: var(--color-surface-subtle);
+    color: var(--color-ink);
+  }
+
+  .account-menu__with-icon svg {
+    flex-shrink: 0;
   }
 </style>
+
+<script>
+  const root = document.querySelector<HTMLElement>("[data-account-menu]");
+  if (root) {
+    const trigger = root.querySelector<HTMLButtonElement>(".account-menu__trigger")!;
+    const panel = root.querySelector<HTMLElement>(".account-menu__panel")!;
+
+    const close = () => {
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    };
+
+    const open = () => {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+    };
+
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (panel.hidden) open();
+      else close();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!root.contains(event.target as Node)) close();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+  }
+</script>

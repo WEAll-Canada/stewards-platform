@@ -21,3 +21,4 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] A steward can RSVP to an event. (tests/stewards-platform.spec.ts)
 - [auto] An admin can add an FAQ item. (tests/stewards-platform.spec.ts)
 - [auto] Join/apply requires the Connect welcome survey fields (profile type, contact, regions, sector, interests, charter). (tests/stewards-auth.spec.ts)
+- [auto] Signed-in header uses an account name menu; Profile and Settings are tabs on one page. (tests/stewards-platform.spec.ts)

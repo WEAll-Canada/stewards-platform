@@ -40,6 +40,31 @@ test("active steward can update profile preferences", async ({ request }) => {
   expect(res.status()).toBe(200);
 });
 
+test("account menu opens profile and settings tabs on one page", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const dash = await request.get("/stewards/dashboard", { headers: { cookie } });
+  expect(dash.status()).toBe(200);
+  const dashHtml = await dash.text();
+  expect(dashHtml).toContain("account-menu");
+  expect(dashHtml).toContain("/stewards/profile?tab=profile");
+  expect(dashHtml).toContain("/stewards/profile?tab=settings");
+  expect(dashHtml).not.toMatch(/site-header__nav[\s\S]*?>Profile</);
+  expect(dashHtml).toMatch(/account-menu__panel[\s\S]*?>Log out</);
+  expect(dashHtml).not.toMatch(/site-header__actions[\s\S]*?<form method="post" action="\/api\/logout">\s*<button class="btn/);
+
+  const profile = await request.get("/stewards/profile?tab=profile", { headers: { cookie } });
+  expect(profile.status()).toBe(200);
+  const profileHtml = await profile.text();
+  expect(profileHtml).toContain('aria-selected="true"');
+  expect(profileHtml).toContain("Save profile");
+
+  const settings = await request.get("/stewards/profile?tab=settings", { headers: { cookie } });
+  expect(settings.status()).toBe(200);
+  const settingsHtml = await settings.text();
+  expect(settingsHtml).toContain("Save settings");
+  expect(settingsHtml).toContain("Email updates and campaigns");
+});
+
 test("steward can request a circle join and admin can approve", async ({ request }) => {
   const stewardCookie = await login(request, "alex@weallcanada.local");
   const join = await request.post("/api/circles/join", {
