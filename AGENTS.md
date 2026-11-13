@@ -10,16 +10,20 @@ You are helping a **non-technical client** edit their own website. They talk to 
 
 ## Every session
 
-1. Run `npm run doctor`. If it reports anything to fix, explain it in plain words and stop. For **MISSING** or **WRONG VERSION**, give them the download link it shows; never install it yourself.
+1. Run `npm run doctor`. If it reports anything to fix, follow **First-time setup** below. If it can't run at all, Node is missing: follow **First-time setup**.
 2. Run `npm run start`. It gets the latest site, sets up the local database, starts the preview, and opens it in the browser. Give the client the local link it prints.
 3. If `npm run start` lists open to-do items, mention them briefly.
 
 ### First-time setup ("get me set up")
 
-1. Run `npm run doctor` and report what's missing, with the links.
-2. If GitHub sign-in is **NOT SIGNED IN**: run `gh auth login --web --git-protocol https` and tell the client to click **Authorize** in the browser window that opens. Then, whenever GitHub sign-in isn't OK (including **NOT CONNECTED TO GIT**), run `gh auth setup-git`.
-3. If the Git name and email are missing: ask the client for their name and email, then run `git config --local user.name "<name>"` and `git config --local user.email "<email>"`.
-4. Run `npm run start`.
+1. Run the setup script: `sh scripts/setup-tools.sh` on a Mac, `powershell -ExecutionPolicy Bypass -File scripts/setup-tools.ps1` on Windows. It installs Node and the GitHub CLI into the client's own user folder (no admin, pinned versions, checksums verified) and skips anything already installed. Explain what it says in plain words.
+   - **Git isn't installed:** on a Mac, tell the client to click **Install** in the Apple window that opened and wait for it to finish; on Windows, give them the link it shows. Then stop until they come back.
+   - **RESTART NEEDED:** tell the client to quit the agent app completely, open it again, and say "get me set up" again. Stop here.
+   - **Anything else it can't fix:** explain it and tell them to contact their operator.
+2. Run `npm run doctor` and report anything still to fix.
+3. If GitHub sign-in is **NOT SIGNED IN**: run `gh auth login --web --git-protocol https` and tell the client to click **Authorize** in the browser window that opens. Then, whenever GitHub sign-in isn't OK (including **NOT CONNECTED TO GIT**), run `gh auth setup-git`.
+4. If the Git name and email are missing: ask the client for their name and email, then run `git config --local user.name "<name>"` and `git config --local user.email "<email>"`.
+5. Run `npm run start`.
 
 ## What the client says → what you run
 
@@ -45,7 +49,7 @@ Everything else (`AGENTS.md`, `CLAUDE.md`, `.agent/`, `.claude/`, `.github/`, `s
 
 ## Commands you must never run
 
-- **Installing system software:** `sudo`, `brew`, `apt`, `apt-get`, `winget`, `choco`, `nvm install`, `curl … | sh`, `npm install -g`. Never edit shell profiles. (`npm ci` is fine; `npm run start` runs it for you.)
+- **Installing system software:** `sudo`, `brew`, `apt`, `apt-get`, `winget`, `choco`, `nvm install`, `curl … | sh`, `npm install -g`. Never edit shell profiles or PATH yourself. The setup script (`scripts/setup-tools.sh` / `.ps1`) is the only way tools get installed. (`npm ci` is fine; `npm run start` runs it for you.)
 - **Raw Git that changes history or the live site:** `git push` (any form), `git reset --hard`, `git rebase`, `git commit`, or anything that checks out or commits to `main`. Saving and sending changes is always `npm run ship`.
 - **Cloudflare:** `wrangler deploy`, `wrangler login`, `wrangler secret`, or any `wrangler` command with `--remote`. Deploys happen automatically after `npm run ship`.
 

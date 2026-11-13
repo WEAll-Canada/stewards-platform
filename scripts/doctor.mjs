@@ -1,4 +1,5 @@
-// Checks that this computer has everything the site needs. Never installs anything.
+// Checks that this computer has everything the site needs. Never installs anything:
+// missing Node or GitHub CLI is installed by scripts/setup-tools.sh (Mac) or .ps1 (Windows).
 // Usage: npm run doctor
 // Uses only Node built-ins so it works before `npm ci` has run.
 import { spawnSync } from "node:child_process";
@@ -8,11 +9,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const LINKS = {
-  git: "https://git-scm.com/downloads",
-  node: "https://nodejs.org/en/download",
-  gh: "https://cli.github.com",
-};
+const WINDOWS = process.platform === "win32";
+const GIT_FIX = WINDOWS
+  ? "Install it from https://git-scm.com/downloads/win, then restart your agent app."
+  : "Your agent will run the setup script, which asks Apple to install it.";
+const INSTALL_FIX = "Your agent will install it with the setup script.";
 
 // Each check returns { status, label, detail }.
 // status: "ok" | "fail" | "setup" ("setup" = fixed automatically by `npm run start`).
@@ -37,7 +38,7 @@ function requiredNodeMajor() {
 function checkGit() {
   const r = run("git", ["--version"]);
   if (!r.found || r.code !== 0) {
-    return fail("Git", `MISSING. Install it from ${LINKS.git}, then restart your agent app.`);
+    return fail("Git", `MISSING. ${GIT_FIX}`);
   }
   return ok("Git", r.out.replace(/^git version /, ""));
 }
@@ -45,11 +46,10 @@ function checkGit() {
 function checkNode() {
   const need = requiredNodeMajor();
   const have = process.versions.node;
-  if (Number.parseInt(have, 10) !== need) {
+  if (Number.parseInt(have, 10) < need) {
     return fail(
       "Node",
-      `WRONG VERSION. You have ${have}, this site needs version ${need}. ` +
-        `Install version ${need} from ${LINKS.node}, then restart your agent app.`,
+      `WRONG VERSION. You have ${have}, this site needs version ${need} or newer. ${INSTALL_FIX}`,
     );
   }
   return ok("Node", have);
@@ -58,7 +58,7 @@ function checkNode() {
 function checkGh() {
   const r = run("gh", ["--version"]);
   if (!r.found || r.code !== 0) {
-    return fail("GitHub CLI", `MISSING. Install it from ${LINKS.gh}, then restart your agent app.`);
+    return fail("GitHub CLI", `MISSING. ${INSTALL_FIX}`);
   }
   return ok("GitHub CLI", r.out.split("\n")[0].replace(/^gh version /, ""));
 }
