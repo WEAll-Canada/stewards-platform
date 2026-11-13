@@ -14,7 +14,7 @@ const { thread, messages } = await getEmailThread(id);
 if (!thread) return Astro.redirect("/stewards/email");
 ---
 <Base title={thread.subject} active="email" user={user}>
-  <p><a href="/stewards/email">← Inbox</a></p>
+  <p><a href="/stewards/email?tab=inbox">← Inbox</a></p>
   <h1>{thread.subject}</h1>
 
   <div class="message-log">

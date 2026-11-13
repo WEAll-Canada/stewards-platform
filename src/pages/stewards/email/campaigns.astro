@@ -12,7 +12,7 @@ const recipientCount = (await listActiveStewardEmails()).length;
 const live = emailConfigured();
 ---
 <Base title="New campaign" active="email" user={user}>
-  <p><a href="/stewards/email">← Email</a></p>
+  <p><a href="/stewards/email?tab=campaigns">← Campaigns</a></p>
   <h1>New campaign</h1>
   <p class="lede">
     Sends to active stewards who opted into email updates.

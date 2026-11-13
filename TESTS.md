@@ -26,3 +26,8 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Events page offers list/calendar views and keeps the add-event form collapsed by default. (tests/stewards-platform.spec.ts)
 - [auto] Directory search and sector filter return matching stewards. (tests/stewards-platform.spec.ts)
 - [auto] Migrating steward can activate with a short form; admin sees an Activation badge. (tests/stewards-auth.spec.ts)
+- [auto] Directory uses a steward card grid with Share connection and an email-icon message control. (tests/stewards-platform.spec.ts)
+- [auto] Messages show the other person once, with photo thumbnails. (tests/stewards-platform.spec.ts)
+- [auto] Any active steward can ask an FAQ with an optional answer; blank answers are flagged for admins. (tests/stewards-platform.spec.ts)
+- [auto] Alliance email has Inbox and Campaigns tabs, sample threads, and inbox search. (tests/stewards-platform.spec.ts)
+- [auto] Account menu Edit profile includes a person icon. (tests/stewards-platform.spec.ts)

@@ -1,0 +1,42 @@
+---
+import { resolveAvatarSrc } from "../lib/avatars";
+
+interface Props {
+  name: string;
+  avatarUrl?: string | null;
+  size?: "sm" | "md";
+}
+
+const { name, avatarUrl = "", size = "sm" } = Astro.props;
+const src = resolveAvatarSrc(avatarUrl, name || "Steward");
+const dim = size === "md" ? 48 : 40;
+---
+<img
+  class:list={["steward-avatar", `steward-avatar--${size}`]}
+  src={src}
+  alt=""
+  width={dim}
+  height={dim}
+  loading="lazy"
+  decoding="async"
+/>
+
+<style>
+  .steward-avatar {
+    display: block;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--color-surface-subtle);
+    flex-shrink: 0;
+  }
+
+  .steward-avatar--sm {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .steward-avatar--md {
+    width: 3rem;
+    height: 3rem;
+  }
+</style>

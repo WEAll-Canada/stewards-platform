@@ -307,6 +307,7 @@ export type DirectorySteward = {
   regions: string;
   sector: string;
   interests: string;
+  avatar_url: string;
 };
 
 export type DirectoryFilters = {
@@ -349,7 +350,7 @@ export async function listDirectoryStewards(filters: DirectoryFilters = {}): Pro
   }
 
   const stmt = env.DB.prepare(
-    `SELECT u.id, p.display_name, p.bio, p.location, p.partner_org, p.regions, p.sector, p.interests
+    `SELECT u.id, p.display_name, p.bio, p.location, p.partner_org, p.regions, p.sector, p.interests, p.avatar_url
      FROM users u
      JOIN profiles p ON p.user_id = u.id
      JOIN preferences pref ON pref.user_id = u.id
@@ -408,11 +409,12 @@ export interface ProfileBundle {
   interests: string;
   interest_other: string;
   about: string;
+  avatar_url: string;
 }
 
 export async function getProfileBundle(userId: number): Promise<ProfileBundle | null> {
   return env.DB.prepare(
-    `SELECT p.display_name, p.bio, p.location, p.partner_org, p.visibility,
+    `SELECT p.display_name, p.bio, p.location, p.partner_org, p.visibility, p.avatar_url,
             p.profile_type, p.contact_links, p.regions, p.map_address, p.sector, p.sector_other,
             p.interests, p.interest_other, p.about,
             pref.allow_directory, pref.allow_messages, pref.email_updates
@@ -431,7 +433,7 @@ export async function updateProfileBundle(userId: number, input: ProfileBundle):
      SET display_name = ?, bio = ?, location = ?, partner_org = ?, visibility = ?,
          profile_type = ?, contact_links = ?, regions = ?, map_address = ?,
          sector = ?, sector_other = ?, interests = ?, interest_other = ?, about = ?,
-         updated_at = ?
+         avatar_url = ?, updated_at = ?
      WHERE user_id = ?`,
   )
     .bind(
@@ -449,6 +451,7 @@ export async function updateProfileBundle(userId: number, input: ProfileBundle):
       input.interests,
       input.interest_other,
       input.about,
+      input.avatar_url,
       now,
       userId,
     )
@@ -593,12 +596,21 @@ export async function upsertConnection(input: {
 }
 
 export async function listConnectionsFor(userId: number): Promise<
-  { id: number; other_id: number; display_name: string; strength: number; reason: string; direction: string }[]
+  {
+    id: number;
+    other_id: number;
+    display_name: string;
+    avatar_url: string;
+    strength: number;
+    reason: string;
+    direction: string;
+  }[]
 > {
   const { results } = await env.DB.prepare(
     `SELECT c.id, c.strength, c.reason,
             CASE WHEN c.from_user_id = ? THEN c.to_user_id ELSE c.from_user_id END AS other_id,
             p.display_name,
+            p.avatar_url,
             CASE WHEN c.from_user_id = ? THEN 'out' ELSE 'in' END AS direction
      FROM connections c
      JOIN profiles p ON p.user_id = CASE WHEN c.from_user_id = ? THEN c.to_user_id ELSE c.from_user_id END
@@ -610,6 +622,7 @@ export async function listConnectionsFor(userId: number): Promise<
       id: number;
       other_id: number;
       display_name: string;
+      avatar_url: string;
       strength: number;
       reason: string;
       direction: string;
@@ -655,11 +668,27 @@ export async function addStewardMessage(threadId: number, fromUserId: number, bo
 }
 
 export async function listStewardThreads(userId: number): Promise<
-  { id: number; last_message_at: string; other_name: string; preview: string }[]
+  { id: number; last_message_at: string; other_name: string; other_avatar: string; preview: string }[]
 > {
   const { results } = await env.DB.prepare(
     `SELECT t.id, t.last_message_at,
-            COALESCE(p.display_name, u.email) AS other_name,
+            COALESCE((
+              SELECT COALESCE(p.display_name, u.email)
+              FROM steward_thread_participants op
+              JOIN users u ON u.id = op.user_id
+              LEFT JOIN profiles p ON p.user_id = op.user_id
+              WHERE op.thread_id = t.id AND op.user_id != ?
+              ORDER BY op.user_id ASC
+              LIMIT 1
+            ), 'Steward') AS other_name,
+            COALESCE((
+              SELECT COALESCE(p.avatar_url, '')
+              FROM steward_thread_participants op
+              LEFT JOIN profiles p ON p.user_id = op.user_id
+              WHERE op.thread_id = t.id AND op.user_id != ?
+              ORDER BY op.user_id ASC
+              LIMIT 1
+            ), '') AS other_avatar,
             COALESCE((
               SELECT m.body FROM steward_messages m
               WHERE m.thread_id = t.id
@@ -667,20 +696,32 @@ export async function listStewardThreads(userId: number): Promise<
             ), '') AS preview
      FROM steward_threads t
      JOIN steward_thread_participants me ON me.thread_id = t.id AND me.user_id = ?
-     JOIN steward_thread_participants other ON other.thread_id = t.id AND other.user_id != ?
-     JOIN users u ON u.id = other.user_id
-     LEFT JOIN profiles p ON p.user_id = other.user_id
      ORDER BY t.last_message_at DESC`,
   )
-    .bind(userId, userId)
-    .all<{ id: number; last_message_at: string; other_name: string; preview: string }>();
+    .bind(userId, userId, userId)
+    .all<{
+      id: number;
+      last_message_at: string;
+      other_name: string;
+      other_avatar: string;
+      preview: string;
+    }>();
   return results;
 }
 
 export async function listStewardMessages(
   threadId: number,
   userId: number,
-): Promise<{ id: number; from_user_id: number; body: string; created_at: string; display_name: string }[]> {
+): Promise<
+  {
+    id: number;
+    from_user_id: number;
+    body: string;
+    created_at: string;
+    display_name: string;
+    avatar_url: string;
+  }[]
+> {
   const member = await env.DB.prepare(
     `SELECT 1 AS ok FROM steward_thread_participants WHERE thread_id = ? AND user_id = ?`,
   )
@@ -689,7 +730,9 @@ export async function listStewardMessages(
   if (!member) return [];
 
   const { results } = await env.DB.prepare(
-    `SELECT m.id, m.from_user_id, m.body, m.created_at, COALESCE(p.display_name, u.email) AS display_name
+    `SELECT m.id, m.from_user_id, m.body, m.created_at,
+            COALESCE(p.display_name, u.email) AS display_name,
+            COALESCE(p.avatar_url, '') AS avatar_url
      FROM steward_messages m
      JOIN users u ON u.id = m.from_user_id
      LEFT JOIN profiles p ON p.user_id = m.from_user_id
@@ -697,7 +740,14 @@ export async function listStewardMessages(
      ORDER BY m.created_at ASC, m.id ASC`,
   )
     .bind(threadId)
-    .all<{ id: number; from_user_id: number; body: string; created_at: string; display_name: string }>();
+    .all<{
+      id: number;
+      from_user_id: number;
+      body: string;
+      created_at: string;
+      display_name: string;
+      avatar_url: string;
+    }>();
   return results;
 }
 
@@ -708,10 +758,35 @@ export async function userCanMessage(userId: number): Promise<boolean> {
   return !!row?.allow_messages;
 }
 
-export async function listEmailThreads(): Promise<
+export type EmailThreadFilters = {
+  q?: string;
+  status?: string;
+};
+
+export async function listEmailThreads(filters: EmailThreadFilters = {}): Promise<
   { id: number; subject: string; status: string; last_message_at: string; preview: string }[]
 > {
-  const { results } = await env.DB.prepare(
+  const clauses: string[] = ["1=1"];
+  const binds: string[] = [];
+  const q = filters.q?.trim();
+  if (q) {
+    clauses.push(
+      `(t.subject LIKE ? OR EXISTS (
+         SELECT 1 FROM email_messages m
+         WHERE m.thread_id = t.id
+           AND (m.body_text LIKE ? OR m.from_addr LIKE ? OR m.to_addrs LIKE ?)
+       ))`,
+    );
+    const like = `%${q}%`;
+    binds.push(like, like, like, like);
+  }
+  const status = filters.status?.trim();
+  if (status === "open" || status === "closed") {
+    clauses.push(`t.status = ?`);
+    binds.push(status);
+  }
+
+  const stmt = env.DB.prepare(
     `SELECT t.id, t.subject, t.status, t.last_message_at,
             COALESCE((
               SELECT m.body_text FROM email_messages m
@@ -719,8 +794,24 @@ export async function listEmailThreads(): Promise<
               ORDER BY m.created_at DESC, m.id DESC LIMIT 1
             ), '') AS preview
      FROM email_threads t
+     WHERE ${clauses.join(" AND ")}
      ORDER BY t.last_message_at DESC`,
-  ).all<{ id: number; subject: string; status: string; last_message_at: string; preview: string }>();
+  );
+  const { results } = binds.length
+    ? await stmt.bind(...binds).all<{
+        id: number;
+        subject: string;
+        status: string;
+        last_message_at: string;
+        preview: string;
+      }>()
+    : await stmt.all<{
+        id: number;
+        subject: string;
+        status: string;
+        last_message_at: string;
+        preview: string;
+      }>();
   return results;
 }
 
@@ -995,7 +1086,8 @@ export async function upsertRsvp(
 
 export async function listFaqs(): Promise<{ id: number; question: string; answer: string }[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id, question, answer FROM faqs ORDER BY sort_order ASC, id ASC`,
+    `SELECT id, question, answer FROM faqs
+     ORDER BY CASE WHEN trim(answer) = '' THEN 0 ELSE 1 END, sort_order ASC, id ASC`,
   ).all<{ id: number; question: string; answer: string }>();
   return results;
 }
@@ -1017,8 +1109,8 @@ export async function upsertFaq(input: {
   }
   await env.DB.prepare(
     `INSERT INTO faqs (question, answer, sort_order, updated_by, updated_at)
-     VALUES (?, ?, 100, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?)`,
   )
-    .bind(input.question, input.answer, input.userId, now)
+    .bind(input.question, input.answer, input.answer.trim() ? 100 : 40, input.userId, now)
     .run();
 }

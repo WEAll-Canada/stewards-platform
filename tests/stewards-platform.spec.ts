@@ -48,6 +48,7 @@ test("account menu opens profile and settings tabs on one page", async ({ reques
   expect(dashHtml).toContain("account-menu");
   expect(dashHtml).toContain("/stewards/profile?tab=profile");
   expect(dashHtml).toContain("/stewards/profile?tab=settings");
+  expect(dashHtml).toMatch(/account-menu__with-icon[\s\S]*?>Edit profile</);
   expect(dashHtml).not.toMatch(/site-header__nav[\s\S]*?>Profile</);
   expect(dashHtml).toMatch(/account-menu__panel[\s\S]*?>Log out</);
   expect(dashHtml).not.toMatch(/site-header__actions[\s\S]*?<form method="post" action="\/api\/logout">\s*<button class="btn/);
@@ -95,9 +96,17 @@ test("directory connection and messaging work", async ({ request }) => {
   const cookie = await login(request, "alex@weallcanada.local");
   const connect = await request.post("/api/connections", {
     headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
-    data: { toUserId: 1, strength: 2, reason: "work" },
+    data: { toUserId: 1, strength: 2, reasons: ["work", "learning"] },
   });
   expect(connect.status()).toBe(200);
+
+  const dir = await request.get("/stewards/directory", { headers: { cookie } });
+  expect(dir.status()).toBe(200);
+  const dirHtml = await dir.text();
+  expect(dirHtml).toContain("dir-grid");
+  expect(dirHtml).toContain("Share connection");
+  expect(dirHtml).toContain('aria-label="Message');
+  expect(dirHtml).toContain("steward-avatar");
 
   const message = await request.post("/api/messages/steward", {
     headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
@@ -106,6 +115,17 @@ test("directory connection and messaging work", async ({ request }) => {
   expect(message.status()).toBe(200);
   const { threadId } = await message.json();
   expect(threadId).toBeTruthy();
+
+  const messagesPage = await request.get(`/stewards/messages?thread=${threadId}`, { headers: { cookie } });
+  expect(messagesPage.status()).toBe(200);
+  const msgHtml = await messagesPage.text();
+  expect(msgHtml).toContain("Platform Admin");
+  expect(msgHtml).toContain("steward-avatar");
+  // Thread list shows only the other person as the conversation title.
+  const listSlice = msgHtml.match(/class="thread-list"[\s\S]*?<\/aside>/)?.[0] ?? "";
+  expect(listSlice).toContain("<strong");
+  expect(listSlice).toContain("Platform Admin");
+  expect(listSlice).not.toContain("Alex Steward");
 });
 
 test("steward can RSVP to an event", async ({ request }) => {
@@ -200,8 +220,46 @@ test("admin can add an FAQ item", async ({ request }) => {
   expect(res.status()).toBe(200);
 });
 
+test("steward can ask an FAQ without an answer", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const res = await request.post("/api/faq", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      question: `Where do I find circle resources? ${Date.now()}`,
+      answer: "",
+    },
+  });
+  expect(res.status()).toBe(200);
+
+  const page = await request.get("/stewards/faq", { headers: { cookie } });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain("Ask a question");
+  expect(html).toContain("leave it blank to flag this to admins");
+  expect(html).toContain("Needs an answer");
+});
+
 test("admin can reply to email and simulate a campaign", async ({ request }) => {
   const cookie = await login(request, "admin@weallcanada.local");
+  const inbox = await request.get("/stewards/email?tab=inbox", { headers: { cookie } });
+  expect(inbox.status()).toBe(200);
+  const inboxHtml = await inbox.text();
+  expect(inboxHtml).toContain('aria-selected="true"');
+  expect(inboxHtml).toContain("Workshop follow-up");
+  expect(inboxHtml).toContain('name="q"');
+
+  const filtered = await request.get("/stewards/email?tab=inbox&q=Halifax", { headers: { cookie } });
+  expect(filtered.status()).toBe(200);
+  const filteredHtml = await filtered.text();
+  expect(filteredHtml).toContain("Volunteer offer from Halifax");
+  expect(filteredHtml).not.toContain("Workshop follow-up");
+
+  const campaigns = await request.get("/stewards/email?tab=campaigns", { headers: { cookie } });
+  expect(campaigns.status()).toBe(200);
+  const campaignsHtml = await campaigns.text();
+  expect(campaignsHtml).toContain("New campaign");
+  expect(campaignsHtml).toContain('id="tab-campaigns"');
+
   const reply = await request.post("/api/email/reply", {
     headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
     data: { threadId: 1, body: "Thanks again — simulated reply from tests." },

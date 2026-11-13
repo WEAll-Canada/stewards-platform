@@ -5,4 +5,5 @@ INSERT OR IGNORE INTO events (id, title, description, starts_at, ends_at, locati
 INSERT OR IGNORE INTO faqs (id, question, answer, sort_order) VALUES
   (1, 'How do I become a steward?', 'Apply on the Stewards Platform. An admin reviews and approves applications.', 1),
   (2, 'What are circles?', 'Circles are sociocratic working groups such as Policy and Knowledge Building. Request to join from the Circles page.', 2),
-  (3, 'Who can use alliance email?', 'Platform admins and circle leads can work the shared inbox and (admins) send campaigns.', 3);
+  (3, 'Who can use alliance email?', 'Platform admins and circle leads can work the shared inbox and (admins) send campaigns.', 3),
+  (100, 'Can partners join a circle without becoming stewards first?', '', 50);

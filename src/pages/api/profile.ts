@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
+import { normalizeAvatarInput } from "../../lib/avatars";
 import { currentUser } from "../../lib/auth";
-import { updateProfileBundle } from "../../lib/db";
+import { getProfileBundle, updateProfileBundle } from "../../lib/db";
 import { INTERESTS, SECTORS } from "../../lib/survey";
 
 export const POST: APIRoute = async ({ request }) => {
@@ -42,6 +43,16 @@ export const POST: APIRoute = async ({ request }) => {
   if (sector && !(SECTORS as readonly string[]).includes(sector)) {
     return Response.json({ error: "Please choose a valid sector." }, { status: 400 });
   }
+
+  let avatar_url = "";
+  if (Object.prototype.hasOwnProperty.call(body, "avatar_url")) {
+    const avatar = normalizeAvatarInput(String(body.avatar_url ?? ""));
+    if (!avatar.ok) return Response.json({ error: avatar.error }, { status: 400 });
+    avatar_url = avatar.value;
+  } else {
+    const existing = await getProfileBundle(user.id);
+    avatar_url = existing?.avatar_url ?? "";
+  }
   const interests = [...new Set(interestsRaw.filter((i) => (INTERESTS as readonly string[]).includes(i)))].slice(0, 3);
 
   await updateProfileBundle(user.id, {
@@ -62,6 +73,7 @@ export const POST: APIRoute = async ({ request }) => {
     interests: interests.join("|"),
     interest_other: interest_other.slice(0, 200),
     about: about.slice(0, 4000),
+    avatar_url,
   });
 
   return Response.json({ ok: true });

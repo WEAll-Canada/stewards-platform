@@ -1,4 +1,5 @@
 ---
+import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
 import { listStewardMessages, listStewardThreads } from "../../lib/db";
@@ -9,6 +10,7 @@ if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
 const threads = await listStewardThreads(user.id);
 const selectedId = Number(Astro.url.searchParams.get("thread") || threads[0]?.id || 0);
+const selected = threads.find((t) => t.id === selectedId) ?? null;
 const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [];
 ---
 <Base title="Messages" active="messages" user={user}>
@@ -24,8 +26,11 @@ const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [
           {threads.map((t) => (
             <li>
               <a class:list={{ "is-active": t.id === selectedId }} href={`/stewards/messages?thread=${t.id}`}>
-                <strong>{t.other_name}</strong>
-                <div class="meta">{t.preview.slice(0, 80)}</div>
+                <StewardAvatar name={t.other_name} avatarUrl={t.other_avatar} />
+                <span>
+                  <strong>{t.other_name}</strong>
+                  <div class="meta">{t.preview.slice(0, 80)}</div>
+                </span>
               </a>
             </li>
           ))}
@@ -34,12 +39,19 @@ const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [
     </aside>
 
     <section class="thread-pane">
-      {selectedId ? (
+      {selectedId && selected ? (
         <>
+          <header class="thread-pane__header">
+            <StewardAvatar name={selected.other_name} avatarUrl={selected.other_avatar} size="md" />
+            <h2>{selected.other_name}</h2>
+          </header>
           <div class="message-log">
             {messages.map((m) => (
               <div class:list={["bubble", { mine: m.from_user_id === user.id }]}>
-                <div class="meta">{m.display_name} · {m.created_at.slice(0, 16).replace("T", " ")}</div>
+                <div class="bubble__who">
+                  <StewardAvatar name={m.display_name} avatarUrl={m.avatar_url} />
+                  <div class="meta">{m.display_name} · {m.created_at.slice(0, 16).replace("T", " ")}</div>
+                </div>
                 <p>{m.body}</p>
               </div>
             ))}
@@ -81,7 +93,9 @@ const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [
   }
 
   .thread-list a {
-    display: block;
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
     padding: var(--space-3);
     border-radius: var(--radius-md);
     text-decoration: none;
@@ -91,6 +105,18 @@ const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [
   .thread-list a.is-active,
   .thread-list a:hover {
     background: var(--color-surface-subtle);
+  }
+
+  .thread-pane__header {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-4);
+  }
+
+  .thread-pane__header h2 {
+    margin: 0;
+    font-size: var(--text-lg);
   }
 
   .meta {
@@ -114,8 +140,14 @@ const messages = selectedId ? await listStewardMessages(selectedId, user.id) : [
     background: #fff8cc;
   }
 
+  .bubble__who {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
   .bubble p {
-    margin: var(--space-1) 0 0;
+    margin: var(--space-2) 0 0;
   }
 </style>
 

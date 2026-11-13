@@ -1,5 +1,7 @@
 ---
+import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
+import { AVATAR_PRESETS, resolveAvatarSrc } from "../../lib/avatars";
 import { currentUser } from "../../lib/auth";
 import { getProfileBundle } from "../../lib/db";
 import { INTERESTS, PROFILE_TYPES, SECTORS } from "../../lib/survey";
@@ -14,6 +16,7 @@ if (!profile) return Astro.redirect("/stewards/dashboard");
 const selectedInterests = new Set((profile.interests || "").split("|").filter(Boolean));
 const tabParam = Astro.url.searchParams.get("tab");
 const activeTab = tabParam === "settings" ? "settings" : "profile";
+const previewSrc = resolveAvatarSrc(profile.avatar_url, profile.display_name);
 ---
 <Base title={activeTab === "settings" ? "Settings" : "Profile"} active="profile" user={user}>
   <h1>Your account</h1>
@@ -43,6 +46,40 @@ const activeTab = tabParam === "settings" ? "settings" : "profile";
   {activeTab === "profile" ? (
     <section class="tab-panel" role="tabpanel" aria-labelledby="tab-profile">
       <form id="profile-form" class="stack survey" style="max-width: 40rem;">
+        <div class="avatar-editor">
+          <img
+            id="avatar-preview"
+            class="avatar-editor__preview"
+            src={previewSrc}
+            alt=""
+            width="96"
+            height="96"
+          />
+          <div class="avatar-editor__controls">
+            <p class="hint">Photo thumbnail (small square — keeps the directory fast)</p>
+            <input type="hidden" name="avatar_url" id="avatar_url" value={profile.avatar_url || ""} />
+            <label class="btn btn--quiet avatar-upload">
+              Upload photo
+              <input id="avatar-file" type="file" accept="image/*" hidden />
+            </label>
+            <fieldset class="avatar-presets">
+              <legend>Or use a prepared thumbnail</legend>
+              <div class="avatar-presets__grid">
+                {AVATAR_PRESETS.map((p) => (
+                  <button
+                    type="button"
+                    class:list={["avatar-preset", { "is-selected": profile.avatar_url === `preset:${p.id}` }]}
+                    data-preset={`preset:${p.id}`}
+                    aria-label={p.label}
+                  >
+                    <StewardAvatar name={p.label} avatarUrl={`preset:${p.id}`} />
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        </div>
+
         <label>
           Display name
           <input name="display_name" required maxlength="100" value={profile.display_name} />
@@ -143,6 +180,7 @@ const activeTab = tabParam === "settings" ? "settings" : "profile";
         <input type="hidden" name="sector_other" value={profile.sector_other} />
         <input type="hidden" name="interest_other" value={profile.interest_other} />
         <input type="hidden" name="about" value={profile.about} />
+        <input type="hidden" name="avatar_url" value={profile.avatar_url || ""} />
         {[...selectedInterests].map((i) => <input type="hidden" name="interests" value={i} />)}
 
         <label>
@@ -239,6 +277,57 @@ const activeTab = tabParam === "settings" ? "settings" : "profile";
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: var(--space-1) var(--space-3);
   }
+
+  .avatar-editor {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .avatar-editor__preview {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--color-surface-subtle);
+  }
+
+  .avatar-editor__controls {
+    flex: 1;
+    min-width: 14rem;
+  }
+
+  .avatar-upload {
+    display: inline-flex;
+    margin: var(--space-2) 0 var(--space-3);
+    cursor: pointer;
+  }
+
+  .avatar-presets {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+  }
+
+  .avatar-presets__grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .avatar-preset {
+    border: 2px solid transparent;
+    border-radius: 50%;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .avatar-preset.is-selected,
+  .avatar-preset:hover {
+    border-color: var(--color-cyan);
+  }
 </style>
 
 <script>
@@ -286,6 +375,7 @@ const activeTab = tabParam === "settings" ? "settings" : "profile";
         interests: unique,
         interest_other: fields.get("interest_other"),
         about: fields.get("about"),
+        avatar_url: fields.get("avatar_url") || "",
       }),
     });
     const data = await res.json();
@@ -298,6 +388,45 @@ const activeTab = tabParam === "settings" ? "settings" : "profile";
     profileForm.addEventListener("submit", (event) => {
       event.preventDefault();
       void saveAccount(profileForm, profileStatus);
+    });
+
+    const avatarInput = profileForm.querySelector<HTMLInputElement>("#avatar_url");
+    const preview = profileForm.querySelector<HTMLImageElement>("#avatar-preview");
+    const fileInput = profileForm.querySelector<HTMLInputElement>("#avatar-file");
+
+    profileForm.querySelectorAll<HTMLButtonElement>(".avatar-preset").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const value = btn.dataset.preset ?? "";
+        if (avatarInput) avatarInput.value = value;
+        const img = btn.querySelector("img");
+        if (preview && img) preview.src = img.src;
+        profileForm.querySelectorAll(".avatar-preset").forEach((el) => el.classList.remove("is-selected"));
+        btn.classList.add("is-selected");
+      });
+    });
+
+    fileInput?.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file || !avatarInput || !preview) return;
+      const bitmap = await createImageBitmap(file);
+      const size = 96;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const scale = Math.max(size / bitmap.width, size / bitmap.height);
+      const w = bitmap.width * scale;
+      const h = bitmap.height * scale;
+      ctx.drawImage(bitmap, (size - w) / 2, (size - h) / 2, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+      if (dataUrl.length > 24000) {
+        profileStatus.textContent = "That photo is still too large after shrinking. Try a simpler image.";
+        return;
+      }
+      avatarInput.value = dataUrl;
+      preview.src = dataUrl;
+      profileForm.querySelectorAll(".avatar-preset").forEach((el) => el.classList.remove("is-selected"));
     });
   }
 

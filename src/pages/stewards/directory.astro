@@ -1,6 +1,8 @@
 ---
+import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
+import { CONNECTION_REASONS, CONNECTION_STRENGTHS, formatConnectionReasons } from "../../lib/connections";
 import {
   listConnectionsFor,
   listDirectoryFilterOptions,
@@ -23,14 +25,15 @@ const hasFilters = Boolean(filters.q || filters.region || filters.sector || filt
 const stewards = await listDirectoryStewards(filters);
 const options = await listDirectoryFilterOptions();
 const connections = await listConnectionsFor(user.id);
+const connectedIds = new Set(connections.map((c) => c.other_id));
 
 function interestList(raw: string) {
-  return (raw || "").split("|").filter(Boolean).join(" · ");
+  return (raw || "").split("|").filter(Boolean);
 }
 ---
 <Base title="Directory" active="directory" user={user}>
   <h1>Alliance directory</h1>
-  <p class="lede">Find stewards by name, region, sector, or interest — then connect or message.</p>
+  <p class="lede">Find stewards by name, region, sector, or interest — then share a connection or message.</p>
 
   <form class="dir-filters" method="get" action="/stewards/directory" role="search">
     <label class="dir-filters__search">
@@ -85,41 +88,50 @@ function interestList(raw: string) {
         : "No directory profiles yet."}
     </p>
   ) : (
-    <ul class="dir-list">
-      {stewards.map((s) => (
-        <li data-id={s.id}>
-          <strong>{s.display_name || "Steward"}</strong>
-          {s.partner_org && <span class="org"> · {s.partner_org}</span>}
-          <div class="meta">
-            {[s.regions || s.location, s.sector].filter(Boolean).join(" · ")}
-          </div>
-          {s.interests && <div class="meta interests">{interestList(s.interests)}</div>}
-          {s.bio && <p>{s.bio}</p>}
-          {s.id !== user.id && (
-            <div class="dir-actions">
-              <label>
-                Strength
-                <select class="strength">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3" selected>3</option>
-                  <option value="4">4</option>
-                </select>
-              </label>
-              <label>
-                Reason
-                <select class="reason">
-                  <option value="work">work</option>
-                  <option value="social">social</option>
-                  <option value="learning" selected>learning</option>
-                </select>
-              </label>
-              <button class="btn btn--accent connect-btn" type="button">Save connection</button>
-              <button class="btn btn--primary message-btn" type="button">Message</button>
+    <ul class="dir-grid">
+      {stewards.map((s) => {
+        const interests = interestList(s.interests);
+        const isConnected = connectedIds.has(s.id);
+        return (
+          <li class="dir-card" data-id={s.id} data-name={s.display_name || "Steward"}>
+            <div class="dir-card__top">
+              <StewardAvatar name={s.display_name || "Steward"} avatarUrl={s.avatar_url} size="md" />
+              <div class="dir-card__identity">
+                <strong>{s.display_name || "Steward"}</strong>
+                {s.partner_org && <div class="org">{s.partner_org}</div>}
+                <div class="meta">
+                  {[s.regions || s.location, s.sector].filter(Boolean).join(" · ")}
+                </div>
+              </div>
             </div>
-          )}
-        </li>
-      ))}
+            {s.bio && <p class="dir-card__bio">{s.bio}</p>}
+            {interests.length > 0 && (
+              <ul class="dir-card__tags">
+                {interests.slice(0, 4).map((tag) => <li>{tag}</li>)}
+              </ul>
+            )}
+            {s.id !== user.id && (
+              <div class="dir-card__actions">
+                <button
+                  class={`btn ${isConnected ? "btn--quiet" : "btn--accent"} connect-btn`}
+                  type="button"
+                  data-connected={isConnected ? "1" : "0"}
+                >
+                  {isConnected ? "Update connection" : "Share connection"}
+                </button>
+                <button class="icon-btn message-btn" type="button" aria-label={`Message ${s.display_name || "steward"}`} title="Message">
+                  <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm0 4-8 5L4 8V6l8 5 8-5v2Z"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   )}
 
@@ -127,16 +139,56 @@ function interestList(raw: string) {
   {connections.length === 0 ? (
     <p class="note">No connections logged yet.</p>
   ) : (
-    <ul class="dir-list">
+    <ul class="conn-list">
       {connections.map((c) => (
         <li>
-          <strong>{c.display_name}</strong>
-          <div class="meta">strength {c.strength} · {c.reason} · {c.direction}</div>
+          <StewardAvatar name={c.display_name} avatarUrl={c.avatar_url} />
+          <div>
+            <strong>{c.display_name}</strong>
+            <div class="meta">
+              {CONNECTION_STRENGTHS.find((s) => s.value === c.strength)?.label ?? `Strength ${c.strength}`}
+              {" · "}
+              {formatConnectionReasons(c.reason)}
+            </div>
+          </div>
         </li>
       ))}
     </ul>
   )}
   <p id="dir-status" role="status"></p>
+
+  <dialog class="connect-dialog" id="connect-dialog" aria-labelledby="connect-dialog-title">
+    <form method="dialog" class="connect-dialog__panel" id="connect-form">
+      <h2 id="connect-dialog-title">Share connection</h2>
+      <p class="connect-dialog__name" id="connect-dialog-name"></p>
+
+      <label>
+        How often do you connect?
+        <select name="strength" required>
+          <option value="" disabled selected>Choose one…</option>
+          {CONNECTION_STRENGTHS.map((s) => (
+            <option value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Why do you connect? (pick all that apply)</legend>
+        {CONNECTION_REASONS.map((r) => (
+          <label class="check">
+            <input type="checkbox" name="reasons" value={r.id} />
+            {r.label}
+          </label>
+        ))}
+      </fieldset>
+
+      <div class="connect-dialog__actions">
+        <button class="btn btn--quiet" type="submit" value="cancel">Cancel</button>
+        <button class="btn btn--primary" type="submit" value="save">Save</button>
+      </div>
+      <p id="connect-dialog-status" role="status"></p>
+    </form>
+  </dialog>
 </Base>
 
 <style>
@@ -166,17 +218,90 @@ function interestList(raw: string) {
     margin: 0 0 var(--space-4);
   }
 
-  .dir-list {
+  .dir-grid {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-4);
   }
 
-  .dir-list li {
-    padding-bottom: var(--space-4);
-    border-bottom: 1px solid var(--color-surface-subtle);
+  .dir-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    min-height: 100%;
+  }
+
+  .dir-card__top {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+  }
+
+  .dir-card__identity strong {
+    display: block;
+    font-size: var(--text-lg);
+    line-height: 1.2;
+  }
+
+  .dir-card__bio {
+    margin: 0;
+    color: var(--color-ink-soft);
+    font-size: var(--text-sm);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .dir-card__tags {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .dir-card__tags li {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--color-ink-soft);
+  }
+
+  .dir-card__actions {
+    margin-top: auto;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-surface-subtle);
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-ink);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    cursor: pointer;
+  }
+
+  .icon-btn:hover {
+    background: var(--color-surface-subtle);
   }
 
   .org,
@@ -185,20 +310,18 @@ function interestList(raw: string) {
     font-size: var(--text-sm);
   }
 
-  .interests {
-    margin-top: 0.15rem;
+  .conn-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--space-3);
   }
 
-  .dir-actions {
+  .conn-list li {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: end;
-    margin-top: var(--space-3);
-  }
-
-  .dir-actions label {
-    font-size: var(--text-sm);
+    gap: var(--space-3);
+    align-items: center;
   }
 
   select,
@@ -215,6 +338,65 @@ function interestList(raw: string) {
     font-size: var(--text-lg);
   }
 
+  .connect-dialog {
+    border: none;
+    padding: 0;
+    background: transparent;
+    max-width: 28rem;
+    width: calc(100% - 2rem);
+  }
+
+  .connect-dialog::backdrop {
+    background: rgba(5, 7, 7, 0.35);
+  }
+
+  .connect-dialog__panel {
+    margin: 0;
+    padding: var(--space-6);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-subtle);
+    background: var(--color-surface);
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .connect-dialog__panel h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+  }
+
+  .connect-dialog__name {
+    margin: 0;
+    color: var(--color-muted);
+  }
+
+  .connect-dialog__panel fieldset {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .connect-dialog__panel .check {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    font-weight: 500;
+  }
+
+  .connect-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  @media (max-width: 1000px) {
+    .dir-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
   @media (max-width: 900px) {
     .dir-filters {
       grid-template-columns: 1fr 1fr;
@@ -225,31 +407,38 @@ function interestList(raw: string) {
       grid-column: 1 / -1;
     }
   }
+
+  @media (max-width: 640px) {
+    .dir-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 
 <script>
   const status = document.querySelector<HTMLParagraphElement>("#dir-status")!;
-  document.querySelectorAll<HTMLElement>(".dir-list > li[data-id]").forEach((row) => {
-    const id = Number(row.dataset.id);
-    row.querySelector<HTMLButtonElement>(".connect-btn")?.addEventListener("click", async () => {
-      status.textContent = "Saving connection…";
-      const strength = Number(row.querySelector<HTMLSelectElement>(".strength")?.value);
-      const reason = row.querySelector<HTMLSelectElement>(".reason")?.value ?? "learning";
-      const res = await fetch("/api/connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toUserId: id, strength, reason }),
+  const dialog = document.querySelector<HTMLDialogElement>("#connect-dialog")!;
+  const form = document.querySelector<HTMLFormElement>("#connect-form")!;
+  const nameEl = document.querySelector<HTMLParagraphElement>("#connect-dialog-name")!;
+  const dialogStatus = document.querySelector<HTMLParagraphElement>("#connect-dialog-status")!;
+  let targetId = 0;
+
+  document.querySelectorAll<HTMLElement>(".dir-card[data-id]").forEach((card) => {
+    const id = Number(card.dataset.id);
+
+    card.querySelector<HTMLButtonElement>(".connect-btn")?.addEventListener("click", () => {
+      targetId = id;
+      nameEl.textContent = `With ${card.dataset.name ?? "this steward"}`;
+      dialogStatus.textContent = "";
+      form.querySelectorAll<HTMLInputElement>('input[name="reasons"]').forEach((el) => {
+        el.checked = false;
       });
-      const data = await res.json();
-      if (res.ok) {
-        status.textContent = "Connection saved.";
-        location.reload();
-        return;
-      }
-      status.textContent = data.error ?? "Something went wrong.";
+      const strength = form.querySelector<HTMLSelectElement>('select[name="strength"]');
+      if (strength) strength.value = "";
+      dialog.showModal();
     });
 
-    row.querySelector<HTMLButtonElement>(".message-btn")?.addEventListener("click", async () => {
+    card.querySelector<HTMLButtonElement>(".message-btn")?.addEventListener("click", async () => {
       status.textContent = "Opening conversation…";
       const res = await fetch("/api/messages/steward", {
         method: "POST",
@@ -263,5 +452,29 @@ function interestList(raw: string) {
       }
       status.textContent = data.error ?? "Something went wrong.";
     });
+  });
+
+  form.addEventListener("submit", async (event) => {
+    const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value === "cancel") return;
+    event.preventDefault();
+    dialogStatus.textContent = "Saving connection…";
+    const strength = Number(new FormData(form).get("strength"));
+    const reasons = [...form.querySelectorAll<HTMLInputElement>('input[name="reasons"]:checked')].map(
+      (el) => el.value,
+    );
+    const res = await fetch("/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toUserId: targetId, strength, reasons }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      dialog.close();
+      status.textContent = "Connection saved.";
+      location.reload();
+      return;
+    }
+    dialogStatus.textContent = data.error ?? "Something went wrong.";
   });
 </script>

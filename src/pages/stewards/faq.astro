@@ -6,27 +6,49 @@ import { listFaqs } from "../../lib/db";
 const user = await currentUser(Astro.request);
 const faqs = await listFaqs();
 const isAdmin = user && hasRole(user, "admin");
+const canAsk = user && user.status === "active";
 ---
 <Base title="FAQ" active="faq" user={user}>
   <h1>FAQ</h1>
-  <p class="lede">Common questions about the Stewards Platform.</p>
+  <p class="lede">Common questions about the Stewards Platform. Ask one below if yours is missing.</p>
 
   <div class="faq-list">
-    {faqs.map((f) => (
-      <details>
-        <summary>{f.question}</summary>
-        <p>{f.answer}</p>
-      </details>
-    ))}
+    {faqs.map((f) => {
+      const unanswered = !f.answer.trim();
+      return (
+        <details open={unanswered && !!isAdmin}>
+          <summary>
+            {f.question}
+            {unanswered && <span class="faq-flag">Needs an answer</span>}
+          </summary>
+          {unanswered ? (
+            <p class="note">Flagged for admins — no answer yet.</p>
+          ) : (
+            <p>{f.answer}</p>
+          )}
+        </details>
+      );
+    })}
   </div>
 
-  {isAdmin && (
-    <section style="margin-top: 2rem;">
-      <h2>Add FAQ</h2>
+  {canAsk && (
+    <section class="faq-ask">
+      <h2>{isAdmin ? "Add a question" : "Ask a question"}</h2>
       <form id="faq-form" class="stack" style="max-width: 32rem;">
-        <label>Question <input name="question" required maxlength="300" /></label>
-        <label>Answer <textarea name="answer" rows="4" required maxlength="4000"></textarea></label>
-        <button class="btn btn--primary" type="submit">Save</button>
+        <label>
+          Question
+          <input name="question" required maxlength="300" />
+        </label>
+        <label>
+          Answer <span class="optional">(optional)</span>
+          <textarea
+            name="answer"
+            rows="4"
+            maxlength="4000"
+            placeholder="If you have an answer, add it in here, or leave it blank to flag this to admins for answering."
+          ></textarea>
+        </label>
+        <button class="btn btn--primary" type="submit">{isAdmin ? "Save" : "Submit question"}</button>
         <p id="faq-status" role="status"></p>
       </form>
     </section>
@@ -49,10 +71,32 @@ const isAdmin = user && hasRole(user, "admin");
   summary {
     cursor: pointer;
     font-weight: 700;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .faq-flag {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--color-ink);
+    background: var(--color-yellow);
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .faq-ask {
+    margin-top: var(--space-8);
   }
 
   h2 {
     font-size: var(--text-lg);
+  }
+
+  .optional {
+    color: var(--color-muted);
+    font-weight: 500;
   }
 </style>
 

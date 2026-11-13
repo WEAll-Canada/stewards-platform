@@ -1,11 +1,11 @@
 import type { APIRoute } from "astro";
-import { currentUser, hasRole } from "../../lib/auth";
+import { currentUser } from "../../lib/auth";
 import { upsertFaq } from "../../lib/db";
 
 export const POST: APIRoute = async ({ request }) => {
   const user = await currentUser(request);
-  if (!user || !hasRole(user, "admin")) {
-    return Response.json({ error: "Admin access required." }, { status: 403 });
+  if (!user || user.status !== "active") {
+    return Response.json({ error: "Sign in required." }, { status: 401 });
   }
 
   let input: unknown;
@@ -19,8 +19,8 @@ export const POST: APIRoute = async ({ request }) => {
   const question = String(body.question ?? "").trim();
   const answer = String(body.answer ?? "").trim();
   const id = body.id == null ? undefined : Number(body.id);
-  if (!question || !answer) {
-    return Response.json({ error: "Question and answer are required." }, { status: 400 });
+  if (!question) {
+    return Response.json({ error: "Question is required." }, { status: 400 });
   }
 
   await upsertFaq({

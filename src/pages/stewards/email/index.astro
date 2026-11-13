@@ -10,51 +10,147 @@ if (!hasRole(user, "admin") && !hasRole(user, "circle_lead")) {
   return Astro.redirect("/stewards/dashboard");
 }
 
-const threads = await listEmailThreads();
-const campaigns = await listCampaigns();
+const tabParam = Astro.url.searchParams.get("tab");
+const activeTab = tabParam === "campaigns" ? "campaigns" : "inbox";
+const q = Astro.url.searchParams.get("q") ?? "";
+const statusFilter = Astro.url.searchParams.get("status") ?? "";
+
+const threads = activeTab === "inbox" ? await listEmailThreads({ q, status: statusFilter }) : [];
+const campaigns = activeTab === "campaigns" ? await listCampaigns() : [];
 const live = emailConfigured();
 ---
 <Base title="Email" active="email" user={user}>
   <h1>Alliance email</h1>
   <p class="lede">
-    Inbox for hello@weallcanada.com
+    {activeTab === "inbox"
+      ? "Receive and reply to mail for hello@weallcanada.com"
+      : "Plan and send outbound campaigns to opted-in stewards"}
     {live ? " · live sending on" : " · local simulate mode (no RESEND_API_KEY)"}.
   </p>
 
-  <p><a class="btn btn--accent" href="/stewards/email/campaigns">New campaign</a></p>
+  <div class="tabs" role="tablist" aria-label="Email sections">
+    <a
+      class:list={["tabs__tab", { "is-active": activeTab === "inbox" }]}
+      href="/stewards/email?tab=inbox"
+      role="tab"
+      aria-selected={activeTab === "inbox"}
+      id="tab-inbox"
+    >
+      Inbox
+    </a>
+    <a
+      class:list={["tabs__tab", { "is-active": activeTab === "campaigns" }]}
+      href="/stewards/email?tab=campaigns"
+      role="tab"
+      aria-selected={activeTab === "campaigns"}
+      id="tab-campaigns"
+    >
+      Campaigns
+    </a>
+  </div>
 
-  <h2>Inbox</h2>
-  <ul class="email-list">
-    {threads.map((t) => (
-      <li>
-        <a href={`/stewards/email/${t.id}`}>
-          <strong>{t.subject}</strong>
-          <div class="meta">{t.last_message_at.slice(0, 16).replace("T", " ")} · {t.status}</div>
-          <div class="meta">{t.preview.slice(0, 120)}</div>
-        </a>
-      </li>
-    ))}
-  </ul>
+  {activeTab === "inbox" ? (
+    <section class="tab-panel" role="tabpanel" aria-labelledby="tab-inbox">
+      <form class="email-filters" method="get" action="/stewards/email" role="search">
+        <input type="hidden" name="tab" value="inbox" />
+        <label class="email-filters__search">
+          Search
+          <input type="search" name="q" value={q} placeholder="Subject, sender, or text…" maxlength="120" />
+        </label>
+        <label>
+          Status
+          <select name="status">
+            <option value="" selected={statusFilter === ""}>All</option>
+            <option value="open" selected={statusFilter === "open"}>Open</option>
+            <option value="closed" selected={statusFilter === "closed"}>Closed</option>
+          </select>
+        </label>
+        <div class="email-filters__actions">
+          <button class="btn btn--primary" type="submit">Filter</button>
+          {(q || statusFilter) && (
+            <a class="btn btn--quiet" href="/stewards/email?tab=inbox">Clear</a>
+          )}
+        </div>
+      </form>
 
-  <h2>Campaigns</h2>
-  {campaigns.length === 0 ? (
-    <p class="note">No campaigns yet.</p>
+      {threads.length === 0 ? (
+        <p class="note">No threads match these filters.</p>
+      ) : (
+        <ul class="email-list">
+          {threads.map((t) => (
+            <li>
+              <a href={`/stewards/email/${t.id}`}>
+                <div class="email-list__row">
+                  <strong>{t.subject}</strong>
+                  <span class:list={["status-pill", { closed: t.status === "closed" }]}>{t.status}</span>
+                </div>
+                <div class="meta">{t.last_message_at.slice(0, 16).replace("T", " ")}</div>
+                <div class="meta">{t.preview.slice(0, 140)}</div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   ) : (
-    <ul class="email-list">
-      {campaigns.map((c) => (
-        <li>
-          <strong>{c.name}</strong>
-          <div class="meta">{c.subject} · {c.recipient_count} people · {c.status}</div>
-        </li>
-      ))}
-    </ul>
+    <section class="tab-panel" role="tabpanel" aria-labelledby="tab-campaigns">
+      <p><a class="btn btn--accent" href="/stewards/email/campaigns">New campaign</a></p>
+      {campaigns.length === 0 ? (
+        <p class="note">No campaigns yet.</p>
+      ) : (
+        <ul class="email-list">
+          {campaigns.map((c) => (
+            <li>
+              <div class="email-list__static">
+                <strong>{c.name}</strong>
+                <div class="meta">{c.subject} · {c.recipient_count} people · {c.status}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )}
 </Base>
 
 <style>
-  h2 {
-    margin-top: var(--space-8);
-    font-size: var(--text-lg);
+  .tabs {
+    display: flex;
+    gap: var(--space-2);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    margin: var(--space-6) 0;
+  }
+
+  .tabs__tab {
+    text-decoration: none;
+    color: var(--color-muted);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+
+  .tabs__tab.is-active {
+    color: var(--color-ink);
+    border-bottom-color: var(--color-cyan);
+  }
+
+  .email-filters {
+    display: grid;
+    grid-template-columns: 1.6fr 10rem auto;
+    gap: var(--space-3);
+    align-items: end;
+    margin-bottom: var(--space-4);
+  }
+
+  .email-filters label {
+    margin: 0;
+  }
+
+  .email-filters__actions {
+    display: flex;
+    gap: var(--space-2);
   }
 
   .email-list {
@@ -65,7 +161,8 @@ const live = emailConfigured();
     gap: var(--space-3);
   }
 
-  .email-list a {
+  .email-list a,
+  .email-list__static {
     display: block;
     text-decoration: none;
     color: inherit;
@@ -74,8 +171,42 @@ const live = emailConfigured();
     border-radius: var(--radius-md);
   }
 
+  .email-list__row {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .status-pill {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-blue);
+  }
+
+  .status-pill.closed {
+    color: var(--color-muted);
+  }
+
   .meta {
     color: var(--color-muted);
     font-size: var(--text-sm);
+  }
+
+  select,
+  input[type="search"] {
+    font: inherit;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-subtle);
+    width: 100%;
+  }
+
+  @media (max-width: 700px) {
+    .email-filters {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
