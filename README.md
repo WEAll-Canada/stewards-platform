@@ -1,8 +1,8 @@
-# Client Site Starter
+# Stewards Platform
 
-A template for websites that non-technical clients edit themselves by talking to an AI agent (Claude Code, Codex, or Antigravity). Clients preview changes on their own computer and ship them to a private staging site; only the operator puts changes live.
+WEAll Canada's Stewards Platform. Editors change the site by talking to an AI agent (Claude Code, Codex, or Antigravity), preview changes on their own computer, and ship them to a private staging site; only the operator puts changes live.
 
-Built on Astro + Cloudflare Workers + D1, on each client's free Cloudflare account.
+Built from the [client-site-starter](https://github.com/Bankless-Card/client-site-starter) template on Astro + Cloudflare Workers + D1.
 
 ## Quickstart
 
@@ -12,13 +12,11 @@ Built on Astro + Cloudflare Workers + D1, on each client's free Cloudflare accou
 2. Open your site's folder in your AI assistant and say **"get me set up"**.
 3. From then on, say **"start the site"**, describe your changes, and say **"ship it"** when you're happy.
 
-### I'm the operator setting up a new client
+### I'm the operator
 
-1. Click **Use this template** → **Create a new repository** (or `gh repo create OWNER/REPO --template Bankless-Card/minimal-agent-project`).
-2. Follow the checklist in **[OPERATOR.md](OPERATOR.md)**: Cloudflare account and databases, GitHub Environments and token, Turnstile, rulesets, and a dry run.
-3. Send the client to SETUP.md.
+See **[OPERATOR.md](OPERATOR.md)** for releases, backups, secrets, and the free-tier budget. To set up a *new* client site, use the [client-site-starter](https://github.com/Bankless-Card/client-site-starter) template instead of this repo.
 
-### I'm developing the template itself
+### I'm developing this site
 
 ```sh
 npm ci
