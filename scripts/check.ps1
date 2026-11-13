@@ -20,10 +20,10 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 
 if (Get-Command node -ErrorAction SilentlyContinue) {
   $haveNode = (node --version) -replace '^v', ''
-  if (($haveNode -split '\.')[0] -eq $needNode) {
+  if ([int]($haveNode -split '\.')[0] -ge [int]$needNode) {
     Report "OK   " "Node" $haveNode
   } else {
-    Report "FIX  " "Node" "WRONG VERSION. You have $haveNode, this site needs version $needNode. Your agent will install it with the setup script."
+    Report "FIX  " "Node" "WRONG VERSION. You have $haveNode, this site needs version $needNode or newer. Your agent will install it with the setup script."
     $problems++
   }
 } else {

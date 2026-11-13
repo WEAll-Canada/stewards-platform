@@ -75,10 +75,10 @@ if ! xcode-select -p >/dev/null 2>&1; then
 fi
 say "  OK   Git"
 
-# Node: install unless a matching version is already on this computer.
+# Node: install unless this computer already has the .nvmrc version or newer.
 have_node=""
 command -v node >/dev/null 2>&1 && have_node=$(node --version 2>/dev/null | sed 's/^v//')
-if [ "${have_node%%.*}" = "$need_node" ]; then
+if [ -n "$have_node" ] && [ "${have_node%%.*}" -ge "$need_node" ]; then
   say "  OK   Node $have_node"
 elif [ -x "$TOOLS/node/bin/node" ] && [ "$("$TOOLS/node/bin/node" --version)" = "v$NODE_VERSION" ]; then
   say "  OK   Node $NODE_VERSION (already installed, not yet visible to your agent app)"
