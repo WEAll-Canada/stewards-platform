@@ -8,8 +8,8 @@ const faqs = await listFaqs();
 const isAdmin = user && hasRole(user, "admin");
 const canAsk = user && user.status === "active";
 ---
-<Base title="FAQ." active="faq" user={user}>
-  <h1>FAQ.</h1>
+<Base title="FAQ" active="faq" user={user}>
+  <h1>FAQ</h1>
   <p class="lede">Common questions about the Stewards Platform. Ask one below if yours is missing.</p>
 
   <div class="faq-list">
