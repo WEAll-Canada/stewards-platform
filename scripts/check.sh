@@ -21,10 +21,10 @@ fi
 
 if command -v node >/dev/null 2>&1; then
   have_node=$(node --version | sed 's/^v//')
-  if [ "${have_node%%.*}" = "$need_node" ]; then
+  if [ "${have_node%%.*}" -ge "$need_node" ]; then
     report "OK   " "Node" "$have_node"
   else
-    report "FIX  " "Node" "WRONG VERSION. You have $have_node, this site needs version $need_node. Your agent will install it with the setup script."
+    report "FIX  " "Node" "WRONG VERSION. You have $have_node, this site needs version $need_node or newer. Your agent will install it with the setup script."
     problems=$((problems + 1))
   fi
 else

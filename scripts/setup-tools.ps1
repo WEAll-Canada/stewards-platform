@@ -73,12 +73,12 @@ try {
   }
   Say "  OK   Git"
 
-  # Node: install unless a matching version is already on this computer.
+  # Node: install unless this computer already has the .nvmrc version or newer.
   $haveNode = ""
   $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
   if ($nodeCmd) { $haveNode = (& node --version) -replace '^v', '' }
   $ourNode = Join-Path $NodeDir "node.exe"
-  if ($haveNode -and ($haveNode -split '\.')[0] -eq $needNode) {
+  if ($haveNode -and [int]($haveNode -split '\.')[0] -ge [int]$needNode) {
     Say "  OK   Node $haveNode"
   } else {
     if ((Test-Path $ourNode) -and ((& $ourNode --version) -eq "v$NodeVersion")) {
