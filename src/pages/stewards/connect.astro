@@ -1,0 +1,242 @@
+---
+import ConnectSubnav from "../../components/ConnectSubnav.astro";
+import StewardAvatar from "../../components/StewardAvatar.astro";
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { getProfileBundle, listMatchCandidates } from "../../lib/db";
+import {
+  normalizeQuery,
+  rankInterestMatches,
+  splitInterests,
+  suggestInterestChips,
+} from "../../lib/matching";
+import { INTERESTS } from "../../lib/survey";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const rawQ = Astro.url.searchParams.get("q") ?? "";
+const query = normalizeQuery(rawQ);
+const profile = await getProfileBundle(user.id);
+const viewerInterests = splitInterests(profile?.interests ?? "");
+const candidates = await listMatchCandidates();
+const results = query.length >= 2 ? rankInterestMatches(candidates, query, user.id, viewerInterests) : [];
+const chips = suggestInterestChips(query, 10);
+const popular = INTERESTS.filter((i) => i !== "Other").slice(0, 8);
+---
+<Base title="Connect · Who is interested?" active="connect" user={user}>
+  <h1>Connect</h1>
+  <p class="lede">Ask “Who is interested in X?” — match by interests, bio, and shared tags with you.</p>
+  <ConnectSubnav active="match" />
+
+  <form class="match-form" method="get" action="/stewards/connect" role="search">
+    <label>
+      Who is interested in…
+      <input
+        type="search"
+        name="q"
+        value={query}
+        placeholder="Climate, housing, community economics…"
+        maxlength="80"
+        autofocus
+      />
+    </label>
+    <button class="btn btn--primary" type="submit">Find stewards</button>
+    {query && <a class="btn btn--quiet" href="/stewards/connect">Clear</a>}
+  </form>
+
+  <div class="chip-row" aria-label="Interest suggestions">
+    {(query ? chips : popular).map((chip) => (
+      <a class="chip" href={`/stewards/connect?q=${encodeURIComponent(chip)}`}>{chip}</a>
+    ))}
+  </div>
+
+  {query.length > 0 && query.length < 2 && (
+    <p class="note">Type at least 2 characters to search.</p>
+  )}
+
+  {query.length >= 2 && (
+    <p class="match-count" aria-live="polite">
+      {results.length === 0
+        ? `No directory stewards matched “${query}”.`
+        : `${results.length} match${results.length === 1 ? "" : "es"} for “${query}”`}
+    </p>
+  )}
+
+  {results.length > 0 && (
+    <ul class="match-list">
+      {results.map((hit) => (
+        <li class="match-card">
+          <div class="match-card__top">
+            <StewardAvatar name={hit.display_name || "Steward"} avatarUrl={hit.avatar_url} size="md" />
+            <div>
+              <strong>{hit.display_name || "Steward"}</strong>
+              <div class="meta">
+                {[hit.regions || hit.location, hit.sector].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          </div>
+          {hit.bio && <p class="bio">{hit.bio}</p>}
+          <ul class="tags">
+            {splitInterests(hit.interests).slice(0, 5).map((tag) => (
+              <li class:list={{ "is-hit": hit.matched_tags.includes(tag) || hit.shared_interests.includes(tag) }}>
+                {tag}
+              </li>
+            ))}
+          </ul>
+          <ul class="reasons">
+            {hit.reasons.map((r) => <li>{r}</li>)}
+          </ul>
+          <div class="actions">
+            <a class="btn btn--quiet" href={`/stewards/directory?q=${encodeURIComponent(hit.display_name || "")}`}>
+              Open in directory
+            </a>
+            <a class="btn btn--accent" href={`/stewards/messages?with=${hit.id}`}>Message</a>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+
+  {!query && (
+    <p class="note">
+      Tip: start with a topic chip above, or explore the <a href="/stewards/network">network map</a> of logged connections.
+    </p>
+  )}
+</Base>
+
+<style>
+  .lede {
+    color: var(--color-ink-soft);
+    max-width: 40rem;
+  }
+
+  .match-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: end;
+    margin-bottom: var(--space-4);
+  }
+
+  .match-form label {
+    flex: 1 1 18rem;
+    margin: 0;
+    display: grid;
+    gap: var(--space-2);
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  .match-form input {
+    font: inherit;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+  }
+
+  .chip {
+    text-decoration: none;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--color-ink-soft);
+    padding: 0.3rem 0.65rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-surface-subtle);
+    background: var(--color-surface-subtle);
+  }
+
+  .chip:hover {
+    color: var(--color-ink);
+    border-color: var(--color-highlight);
+    background: var(--color-surface);
+  }
+
+  .match-count,
+  .note {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .match-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-4) 0 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .match-card {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .match-card__top {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+  }
+
+  .match-card__top strong {
+    font-size: var(--text-lg);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .bio {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
+  }
+
+  .tags {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .tags li {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-surface-subtle);
+    color: var(--color-ink-soft);
+  }
+
+  .tags li.is-hit {
+    border-color: var(--color-highlight);
+    background: color-mix(in srgb, var(--color-highlight) 18%, white);
+    color: var(--color-ink);
+  }
+
+  .reasons {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+</style>

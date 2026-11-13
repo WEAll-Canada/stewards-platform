@@ -31,3 +31,4 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Any active steward can ask an FAQ with an optional answer; blank answers are flagged for admins. (tests/stewards-platform.spec.ts)
 - [auto] Alliance email has Inbox and Campaigns tabs, sample threads, and inbox search. (tests/stewards-platform.spec.ts)
 - [auto] Account menu Edit profile includes a person icon. (tests/stewards-platform.spec.ts)
+- [auto] Interest matching (“Who is interested?”) returns topic matches; network map page embeds graph data. (tests/stewards-platform.spec.ts)

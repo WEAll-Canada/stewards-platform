@@ -2,11 +2,20 @@
 import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
-import { listStewardMessages, listStewardThreads } from "../../lib/db";
+import { getOrCreateDmThread, getUserById, listStewardMessages, listStewardThreads } from "../../lib/db";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const withId = Number(Astro.url.searchParams.get("with") || 0);
+if (Number.isFinite(withId) && withId > 0 && withId !== user.id) {
+  const other = await getUserById(withId);
+  if (other?.status === "active") {
+    const threadId = await getOrCreateDmThread(user.id, withId);
+    return Astro.redirect(`/stewards/messages?thread=${threadId}`);
+  }
+}
 
 const threads = await listStewardThreads(user.id);
 const selectedId = Number(Astro.url.searchParams.get("thread") || threads[0]?.id || 0);

@@ -293,3 +293,30 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
   expect(send.status()).toBe(200);
   expect((await send.json()).mode).toBe("simulated");
 });
+
+test("interest matching finds stewards by topic and network map renders", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+
+  const connectHome = await request.get("/stewards/connect", { headers: { cookie } });
+  expect(connectHome.status()).toBe(200);
+  const homeHtml = await connectHome.text();
+  expect(homeHtml).toContain("Who is interested");
+  expect(homeHtml).toContain("/stewards/network");
+  expect(homeHtml).toContain("Climate");
+
+  const climate = await request.get("/stewards/connect?q=Climate", { headers: { cookie } });
+  expect(climate.status()).toBe(200);
+  const climateHtml = await climate.text();
+  expect(climateHtml).toMatch(/match/i);
+  expect(climateHtml).toContain("Climate");
+  // Seeded directory stewards include Climate interest (e.g. Alex excluded as viewer; Priya/admin may match).
+  expect(climateHtml).toMatch(/Priya Nair|Platform Admin|Kai Chen|Jordan Lee/);
+
+  const network = await request.get("/stewards/network", { headers: { cookie } });
+  expect(network.status()).toBe(200);
+  const networkHtml = await network.text();
+  expect(networkHtml).toContain("network-map");
+  expect(networkHtml).toContain("network-data");
+  expect(networkHtml).toContain('"edges"');
+  expect(networkHtml).toContain('"nodes"');
+});

@@ -1,0 +1,362 @@
+---
+import ConnectSubnav from "../../components/ConnectSubnav.astro";
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { getNetworkGraph } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const graph = await getNetworkGraph();
+const payload = JSON.stringify({
+  viewerId: user.id,
+  nodes: graph.nodes.map((n) => ({
+    id: n.id,
+    name: n.display_name || "Steward",
+    interests: (n.interests || "").split("|").filter(Boolean).slice(0, 3),
+    regions: n.regions || "",
+    sector: n.sector || "",
+  })),
+  edges: graph.edges,
+});
+---
+<Base title="Connect · Network map" active="connect" user={user}>
+  <h1>Connect</h1>
+  <p class="lede">
+    A simple map of directory stewards and the connections they’ve logged. Drag to pan, scroll to zoom.
+  </p>
+  <ConnectSubnav active="network" />
+
+  <p class="stats" aria-live="polite">
+    {graph.nodes.length} stewards · {graph.edges.length} connection{graph.edges.length === 1 ? "" : "s"}
+  </p>
+
+  <div class="map-shell">
+    <svg id="network-map" class="network-map" role="img" aria-label="Steward network map"></svg>
+    <aside class="map-panel" data-panel hidden>
+      <h2 data-panel-name>—</h2>
+      <p class="meta" data-panel-meta></p>
+      <ul class="tags" data-panel-tags></ul>
+      <div class="panel-actions">
+        <a class="btn btn--quiet" data-panel-dir href="/stewards/directory">Directory</a>
+        <a class="btn btn--accent" data-panel-msg href="/stewards/messages">Message</a>
+        <a class="btn btn--primary" data-panel-match href="/stewards/connect">Find similar</a>
+      </div>
+      <button type="button" class="btn btn--quiet panel-close" data-panel-close>Close</button>
+    </aside>
+  </div>
+
+  <p class="legend">
+    <span><i class="swatch swatch--you"></i> You</span>
+    <span><i class="swatch swatch--node"></i> Steward</span>
+    <span><i class="swatch swatch--edge"></i> Stronger line = closer connection</span>
+  </p>
+
+  <script id="network-data" type="application/json" is:inline set:html={payload}></script>
+</Base>
+
+<style>
+  .lede {
+    color: var(--color-ink-soft);
+    max-width: 42rem;
+  }
+
+  .stats {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-3);
+  }
+
+  .map-shell {
+    position: relative;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    background:
+      radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--color-cyan) 12%, white), transparent 45%),
+      radial-gradient(circle at 80% 70%, color-mix(in srgb, var(--color-yellow) 16%, white), transparent 40%),
+      var(--color-surface);
+    min-height: 28rem;
+    overflow: hidden;
+  }
+
+  .network-map {
+    width: 100%;
+    height: min(70vh, 36rem);
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .network-map:active {
+    cursor: grabbing;
+  }
+
+  .map-panel {
+    position: absolute;
+    right: var(--space-4);
+    top: var(--space-4);
+    width: min(18rem, calc(100% - 2rem));
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    padding: var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+    z-index: 2;
+  }
+
+  .map-panel[hidden] {
+    display: none;
+  }
+
+  .map-panel h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+  }
+
+  .meta {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .tags {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .tags li {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-surface-subtle);
+  }
+
+  .panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+  }
+
+  .swatch--you {
+    background: var(--color-accent);
+    outline: 2px solid var(--color-ink);
+  }
+
+  .swatch--node {
+    background: var(--color-highlight);
+  }
+
+  .swatch--edge {
+    width: 1.25rem;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-ink-soft);
+  }
+</style>
+
+<script>
+  type GraphPayload = {
+    viewerId: number;
+    nodes: { id: number; name: string; interests: string[]; regions: string; sector: string }[];
+    edges: { source: number; target: number; strength: number; reason: string }[];
+  };
+
+  const raw = document.getElementById("network-data")?.textContent ?? "{}";
+  const data = JSON.parse(raw) as GraphPayload;
+  const svg = document.getElementById("network-map") as SVGSVGElement | null;
+  const panel = document.querySelector<HTMLElement>("[data-panel]");
+  if (!svg || !panel) throw new Error("Network map missing root elements");
+
+  const panelName = panel.querySelector("[data-panel-name]")!;
+  const panelMeta = panel.querySelector("[data-panel-meta]")!;
+  const panelTags = panel.querySelector("[data-panel-tags]")!;
+  const panelDir = panel.querySelector<HTMLAnchorElement>("[data-panel-dir]")!;
+  const panelMsg = panel.querySelector<HTMLAnchorElement>("[data-panel-msg]")!;
+  const panelMatch = panel.querySelector<HTMLAnchorElement>("[data-panel-match]")!;
+  const panelClose = panel.querySelector("[data-panel-close]")!;
+
+  const width = 900;
+  const height = 560;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  const degree = new Map<number, number>();
+  for (const n of data.nodes) degree.set(n.id, 0);
+  for (const e of data.edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+
+  // Connected stewards on a ring; isolates in an outer belt.
+  const connected = data.nodes.filter((n) => (degree.get(n.id) ?? 0) > 0);
+  const isolates = data.nodes.filter((n) => (degree.get(n.id) ?? 0) === 0);
+  const cx = width / 2;
+  const cy = height / 2;
+  const positions = new Map<number, { x: number; y: number }>();
+
+  connected.forEach((n, i) => {
+    const angle = (i / Math.max(connected.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    const r = Math.min(width, height) * 0.28;
+    positions.set(n.id, { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+  });
+  isolates.forEach((n, i) => {
+    const angle = (i / Math.max(isolates.length, 1)) * Math.PI * 2;
+    const r = Math.min(width, height) * 0.42;
+    positions.set(n.id, { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+  });
+
+  const ns = "http://www.w3.org/2000/svg";
+  const root = document.createElementNS(ns, "g");
+  root.setAttribute("data-viewport", "true");
+  svg.appendChild(root);
+
+  const edgeLayer = document.createElementNS(ns, "g");
+  const nodeLayer = document.createElementNS(ns, "g");
+  root.appendChild(edgeLayer);
+  root.appendChild(nodeLayer);
+
+  for (const e of data.edges) {
+    const a = positions.get(e.source);
+    const b = positions.get(e.target);
+    if (!a || !b) continue;
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", String(a.x));
+    line.setAttribute("y1", String(a.y));
+    line.setAttribute("x2", String(b.x));
+    line.setAttribute("y2", String(b.y));
+    line.setAttribute("stroke", "#262626");
+    line.setAttribute("stroke-opacity", String(0.25 + e.strength * 0.15));
+    line.setAttribute("stroke-width", String(1 + e.strength));
+    edgeLayer.appendChild(line);
+  }
+
+  for (const n of data.nodes) {
+    const p = positions.get(n.id)!;
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("transform", `translate(${p.x},${p.y})`);
+    g.style.cursor = "pointer";
+
+    const isYou = n.id === data.viewerId;
+    const r = 10 + Math.min(degree.get(n.id) ?? 0, 4) * 2;
+    const circle = document.createElementNS(ns, "circle");
+    circle.setAttribute("r", String(r));
+    circle.setAttribute("fill", isYou ? "#fdda24" : "#00a9e0");
+    circle.setAttribute("stroke", isYou ? "#000" : "#fff");
+    circle.setAttribute("stroke-width", isYou ? "3" : "2");
+    g.appendChild(circle);
+
+    const label = document.createElementNS(ns, "text");
+    label.textContent = n.name.split(" ")[0] || n.name;
+    label.setAttribute("y", String(r + 14));
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("font-size", "11");
+    label.setAttribute("font-family", "Lato, sans-serif");
+    label.setAttribute("fill", "#262626");
+    g.appendChild(label);
+
+    g.addEventListener("click", (event) => {
+      event.stopPropagation();
+      panel.hidden = false;
+      panelName.textContent = n.name;
+      panelMeta.textContent = [n.regions, n.sector].filter(Boolean).join(" · ") || "Steward";
+      panelTags.innerHTML = "";
+      for (const tag of n.interests) {
+        const li = document.createElement("li");
+        li.textContent = tag;
+        panelTags.appendChild(li);
+      }
+      panelDir.href = `/stewards/directory?q=${encodeURIComponent(n.name)}`;
+      panelMsg.href = `/stewards/messages?with=${n.id}`;
+      const topic = n.interests[0] || "";
+      panelMatch.href = topic
+        ? `/stewards/connect?q=${encodeURIComponent(topic)}`
+        : "/stewards/connect";
+    });
+
+    nodeLayer.appendChild(g);
+  }
+
+  let scale = 1;
+  let tx = 0;
+  let ty = 0;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const applyTransform = () => {
+    root.setAttribute("transform", `translate(${tx} ${ty}) scale(${scale})`);
+  };
+
+  svg.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    svg.setPointerCapture(event.pointerId);
+  });
+  svg.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    tx += event.clientX - lastX;
+    ty += event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    applyTransform();
+  });
+  const endDrag = (event: PointerEvent) => {
+    dragging = false;
+    try {
+      svg.releasePointerCapture(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointercancel", endDrag);
+
+  svg.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? 0.9 : 1.1;
+      scale = Math.min(2.5, Math.max(0.55, scale * delta));
+      applyTransform();
+    },
+    { passive: false },
+  );
+
+  panelClose.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+  svg.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+</script>

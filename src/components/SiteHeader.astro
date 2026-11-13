@@ -24,6 +24,21 @@ const accountLabel = user?.display_name || user?.email || "Account";
       <nav class="site-header__nav" aria-label="Primary">
         <a href="/stewards/dashboard" class:list={{ "is-active": active === "dashboard" }}>Dashboard</a>
         <a href="/stewards/directory" class:list={{ "is-active": active === "directory" }}>Directory</a>
+        <div class="nav-flyout" data-connect-nav>
+          <a
+            href="/stewards/connect"
+            class:list={{ "is-active": active === "connect" }}
+            aria-haspopup="true"
+            aria-expanded="false"
+            data-connect-trigger
+          >
+            Connect
+          </a>
+          <div class="nav-flyout__panel" role="menu" data-connect-panel hidden>
+            <a role="menuitem" href="/stewards/connect">Who is interested?</a>
+            <a role="menuitem" href="/stewards/network">Network map</a>
+          </div>
+        </div>
         <div class="nav-flyout" data-circles-nav>
           <a
             href="/stewards/circles"
@@ -314,29 +329,31 @@ const accountLabel = user?.display_name || user?.email || "Account";
     });
   }
 
-  const circlesNav = document.querySelector<HTMLElement>("[data-circles-nav]");
-  if (circlesNav) {
-    const trigger = circlesNav.querySelector<HTMLAnchorElement>("[data-circles-trigger]");
-    const panel = circlesNav.querySelector<HTMLElement>("[data-circles-panel]");
-    if (trigger && panel) {
-      const close = () => {
-        panel.hidden = true;
-        trigger.setAttribute("aria-expanded", "false");
-      };
-      const open = () => {
-        panel.hidden = false;
-        trigger.setAttribute("aria-expanded", "true");
-      };
-
-      circlesNav.addEventListener("mouseenter", open);
-      circlesNav.addEventListener("mouseleave", close);
-      circlesNav.addEventListener("focusin", open);
-      circlesNav.addEventListener("focusout", (event) => {
-        if (!circlesNav.contains(event.relatedTarget as Node | null)) close();
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") close();
-      });
-    }
+  function bindFlyout(rootSelector: string, triggerSelector: string, panelSelector: string) {
+    const root = document.querySelector<HTMLElement>(rootSelector);
+    if (!root) return;
+    const trigger = root.querySelector<HTMLAnchorElement>(triggerSelector);
+    const panel = root.querySelector<HTMLElement>(panelSelector);
+    if (!trigger || !panel) return;
+    const close = () => {
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    };
+    const open = () => {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+    };
+    root.addEventListener("mouseenter", open);
+    root.addEventListener("mouseleave", close);
+    root.addEventListener("focusin", open);
+    root.addEventListener("focusout", (event) => {
+      if (!root.contains(event.relatedTarget as Node | null)) close();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
   }
+
+  bindFlyout("[data-circles-nav]", "[data-circles-trigger]", "[data-circles-panel]");
+  bindFlyout("[data-connect-nav]", "[data-connect-trigger]", "[data-connect-panel]");
 </script>

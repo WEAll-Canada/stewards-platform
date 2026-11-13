@@ -1,0 +1,41 @@
+---
+interface Props {
+  active: "match" | "network";
+}
+const { active } = Astro.props;
+---
+<nav class="connect-subnav" aria-label="Connect">
+  <a href="/stewards/connect" class:list={{ "is-active": active === "match" }}>Who is interested?</a>
+  <a href="/stewards/network" class:list={{ "is-active": active === "network" }}>Network map</a>
+</nav>
+
+<style>
+  .connect-subnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-6);
+  }
+
+  .connect-subnav a {
+    text-decoration: none;
+    font-weight: 700;
+    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
+    padding: 0.45rem 0.9rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-surface-subtle);
+    background: var(--color-surface);
+  }
+
+  .connect-subnav a:hover {
+    color: var(--color-ink);
+    border-color: var(--color-highlight);
+  }
+
+  .connect-subnav a.is-active {
+    color: var(--color-ink);
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+</style>

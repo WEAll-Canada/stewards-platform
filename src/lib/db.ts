@@ -361,6 +361,83 @@ export async function listDirectoryStewards(filters: DirectoryFilters = {}): Pro
   return results;
 }
 
+export type MatchCandidateRow = {
+  id: number;
+  display_name: string;
+  bio: string;
+  location: string;
+  partner_org: string;
+  regions: string;
+  sector: string;
+  interests: string;
+  interest_other: string;
+  about: string;
+  avatar_url: string;
+};
+
+/** Directory-visible stewards with fields needed for interest matching. */
+export async function listMatchCandidates(): Promise<MatchCandidateRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, p.display_name, p.bio, p.location, p.partner_org, p.regions, p.sector,
+            p.interests, p.interest_other, p.about, p.avatar_url
+     FROM users u
+     JOIN profiles p ON p.user_id = u.id
+     JOIN preferences pref ON pref.user_id = u.id
+     WHERE u.status = 'active' AND pref.allow_directory = 1 AND p.visibility != 'private'
+     ORDER BY p.display_name COLLATE NOCASE ASC`,
+  ).all<MatchCandidateRow>();
+  return results;
+}
+
+export type NetworkNode = {
+  id: number;
+  display_name: string;
+  interests: string;
+  avatar_url: string;
+  regions: string;
+  sector: string;
+};
+
+export type NetworkEdge = {
+  source: number;
+  target: number;
+  strength: number;
+  reason: string;
+};
+
+/** Nodes = directory-visible stewards; edges = connections between those nodes. */
+export async function getNetworkGraph(): Promise<{ nodes: NetworkNode[]; edges: NetworkEdge[] }> {
+  const { results: nodes } = await env.DB.prepare(
+    `SELECT u.id, p.display_name, p.interests, p.avatar_url, p.regions, p.sector
+     FROM users u
+     JOIN profiles p ON p.user_id = u.id
+     JOIN preferences pref ON pref.user_id = u.id
+     WHERE u.status = 'active' AND pref.allow_directory = 1 AND p.visibility != 'private'
+     ORDER BY p.display_name COLLATE NOCASE ASC`,
+  ).all<NetworkNode>();
+
+  const idSet = new Set(nodes.map((n) => n.id));
+  const { results: rawEdges } = await env.DB.prepare(
+    `SELECT from_user_id, to_user_id, strength, reason
+     FROM connections
+     ORDER BY strength DESC, updated_at DESC`,
+  ).all<{ from_user_id: number; to_user_id: number; strength: number; reason: string }>();
+
+  const edgeMap = new Map<string, NetworkEdge>();
+  for (const e of rawEdges) {
+    if (!idSet.has(e.from_user_id) || !idSet.has(e.to_user_id)) continue;
+    const a = Math.min(e.from_user_id, e.to_user_id);
+    const b = Math.max(e.from_user_id, e.to_user_id);
+    const key = `${a}:${b}`;
+    const existing = edgeMap.get(key);
+    if (!existing || e.strength > existing.strength) {
+      edgeMap.set(key, { source: a, target: b, strength: e.strength, reason: e.reason || "" });
+    }
+  }
+
+  return { nodes, edges: [...edgeMap.values()] };
+}
+
 export async function listDirectoryFilterOptions(): Promise<{
   regions: string[];
   sectors: string[];
