@@ -38,3 +38,4 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Knowledge Commons lists seeded items and lets active stewards add a link/note entry. (tests/stewards-platform.spec.ts)
 - [auto] Circle detail pages show resources and decision log; members can add both. (tests/stewards-platform.spec.ts)
 - [auto] Events show RSVP counts/maybe, and signed-in stewards can download an .ics calendar feed. (tests/stewards-platform.spec.ts)
+- [auto] Circle leads/admins can edit circle page details and manage member/lead roles; non-leads are redirected away from edit. (tests/stewards-platform.spec.ts)

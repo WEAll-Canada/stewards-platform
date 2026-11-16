@@ -185,6 +185,57 @@ test("circles nav lists memberships and circle detail pages open", async ({ requ
   expect(addDecision.status()).toBe(200);
 });
 
+test("circle leads can edit the circle page and manage members", async ({ request }) => {
+  const adminCookie = await login(request, "admin@weallcanada.local");
+  const editPage = await request.get("/stewards/circles/central/edit", {
+    headers: { cookie: adminCookie },
+  });
+  expect(editPage.status()).toBe(200);
+  const editHtml = await editPage.text();
+  expect(editHtml).toContain("Edit circle page");
+  expect(editHtml).toContain("Welcome note");
+  expect(editHtml).toContain("Members & leads");
+
+  const save = await request.post("/api/circles/update", {
+    headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      slug: "central",
+      name: "Central Circle",
+      description: "Coordination hub for WeAll Canada.",
+      welcomeNote: "Edited welcome note from tests.",
+      resourcesBlurb: "Test resources intro.",
+      colorToken: "central",
+      status: "active",
+    },
+  });
+  expect(save.status()).toBe(200);
+
+  const view = await request.get("/stewards/circles/central", { headers: { cookie: adminCookie } });
+  expect(view.status()).toBe(200);
+  const viewHtml = await view.text();
+  expect(viewHtml).toContain("Edited welcome note from tests.");
+  expect(viewHtml).toContain("Edit page");
+  expect(viewHtml).toContain("Test resources intro.");
+
+  const promote = await request.post("/api/circles/members", {
+    headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { slug: "central", userId: 3, action: "set_role", role: "lead" },
+  });
+  expect(promote.status()).toBe(200);
+
+  const alexCookie = await login(request, "alex@weallcanada.local");
+  const alexEdit = await request.get("/stewards/circles/central/edit", {
+    headers: { cookie: alexCookie },
+  });
+  expect(alexEdit.status()).toBe(200);
+
+  const blocked = await request.get("/stewards/circles/policy/edit", {
+    headers: { cookie: alexCookie },
+    maxRedirects: 0,
+  });
+  expect(blocked.status()).toBe(302);
+});
+
 test("directory supports search and sector filter", async ({ request }) => {
   const cookie = await login(request, "alex@weallcanada.local");
   // Keep this test self-contained — other tests may have changed Alex's sector.

@@ -22,6 +22,7 @@ const members = await listCircleMembers(circle.id);
 const resources = await listCircleResources(circle.id);
 const decisions = await listCircleDecisions(circle.id);
 const canContribute = !!circle.membership || hasRole(user, "admin");
+const canEdit = circle.membership === "lead" || hasRole(user, "admin");
 const relatedEvents = (await listEventsForUser(user.id))
   .filter((e) => e.circle_name === circle.name)
   .slice(0, 5);
@@ -36,8 +37,14 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
   <header class="circle-hero">
     <WeAllCircle variant={variant} size={64} animate={true} />
     <div>
-      <h1>{circle.name}</h1>
+      <div class="circle-hero__title">
+        <h1>{circle.name}</h1>
+        {canEdit && (
+          <a class="btn btn--quiet" href={`/stewards/circles/${circle.slug}/edit`}>Edit page</a>
+        )}
+      </div>
       <p class="lede">{circle.description}</p>
+      {circle.welcome_note && <p class="welcome">{circle.welcome_note}</p>}
       <p class="meta">
         {circle.member_count} members
         {circle.status === "dormant" && " · dormant"}
@@ -98,6 +105,7 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
 
   <section class="circle-section">
     <h2>Resources</h2>
+    {circle.resources_blurb && <p class="meta resources-blurb">{circle.resources_blurb}</p>}
     {resources.length === 0 ? (
       <p class="meta">No shared resources yet.</p>
     ) : (
@@ -181,8 +189,26 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
     margin-bottom: var(--space-8);
   }
 
+  .circle-hero__title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    margin-bottom: var(--space-3);
+  }
+
   .circle-hero h1 {
+    margin: 0;
+  }
+
+  .welcome {
+    max-width: 40rem;
     margin: 0 0 var(--space-3);
+    white-space: pre-wrap;
+  }
+
+  .resources-blurb {
+    margin-bottom: var(--space-3);
   }
 
   .meta {

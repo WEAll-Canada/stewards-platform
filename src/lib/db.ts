@@ -658,14 +658,29 @@ export interface CircleRow {
   color_token: string;
   status: "active" | "dormant";
   description: string;
+  welcome_note: string;
+  resources_blurb: string;
   member_count: number;
   membership: string | null;
   pending_request: number;
 }
 
+export const CIRCLE_COLOR_TOKENS = [
+  "central",
+  "knowledge",
+  "policy",
+  "liberating",
+  "grassroots",
+  "master",
+] as const;
+
+export type CircleColorToken = (typeof CIRCLE_COLOR_TOKENS)[number];
+
 export async function listCirclesForUser(userId: number): Promise<CircleRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT c.id, c.slug, c.name, c.color_token, c.status, c.description,
+            COALESCE(c.welcome_note, '') AS welcome_note,
+            COALESCE(c.resources_blurb, '') AS resources_blurb,
             (SELECT COUNT(*) FROM circle_members cm2 WHERE cm2.circle_id = c.id) AS member_count,
             cm.role AS membership,
             CASE WHEN jr.id IS NULL THEN 0 ELSE 1 END AS pending_request
@@ -1370,6 +1385,8 @@ export async function getCircleBySlug(slug: string, userId: number): Promise<Cir
   return (
     (await env.DB.prepare(
       `SELECT c.id, c.slug, c.name, c.color_token, c.status, c.description,
+              COALESCE(c.welcome_note, '') AS welcome_note,
+              COALESCE(c.resources_blurb, '') AS resources_blurb,
               (SELECT COUNT(*) FROM circle_members cm2 WHERE cm2.circle_id = c.id) AS member_count,
               cm.role AS membership,
               CASE WHEN jr.id IS NULL THEN 0 ELSE 1 END AS pending_request
@@ -1382,6 +1399,112 @@ export async function getCircleBySlug(slug: string, userId: number): Promise<Cir
       .bind(userId, userId, slug)
       .first<CircleRow>()) ?? null
   );
+}
+
+export async function updateCircleDetails(
+  circleId: number,
+  input: {
+    name: string;
+    description: string;
+    welcomeNote: string;
+    resourcesBlurb: string;
+    status: "active" | "dormant";
+    colorToken: string;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const name = input.name.trim();
+  if (!name) return { ok: false, error: "Name is required." };
+  if (!(CIRCLE_COLOR_TOKENS as readonly string[]).includes(input.colorToken)) {
+    return { ok: false, error: "Invalid circle colour." };
+  }
+  if (!["active", "dormant"].includes(input.status)) {
+    return { ok: false, error: "Invalid status." };
+  }
+
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const result = await env.DB.prepare(
+    `UPDATE circles
+     SET name = ?, description = ?, welcome_note = ?, resources_blurb = ?,
+         status = ?, color_token = ?, updated_at = ?
+     WHERE id = ?`,
+  )
+    .bind(
+      name.slice(0, 120),
+      input.description.trim().slice(0, 1000),
+      input.welcomeNote.trim().slice(0, 4000),
+      input.resourcesBlurb.trim().slice(0, 1000),
+      input.status,
+      input.colorToken,
+      now,
+      circleId,
+    )
+    .run();
+
+  if (!result.meta.changes) return { ok: false, error: "Circle not found." };
+  return { ok: true };
+}
+
+export async function setCircleMemberRole(
+  circleId: number,
+  targetUserId: number,
+  role: "member" | "lead",
+  actorId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const membership = await env.DB.prepare(
+    `SELECT role FROM circle_members WHERE circle_id = ? AND user_id = ?`,
+  )
+    .bind(circleId, targetUserId)
+    .first<{ role: string }>();
+  if (!membership) return { ok: false, error: "That person is not in this circle." };
+
+  if (membership.role === "lead" && role === "member") {
+    const leads = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM circle_members WHERE circle_id = ? AND role = 'lead'`,
+    )
+      .bind(circleId)
+      .first<{ n: number }>();
+    if ((leads?.n ?? 0) <= 1) {
+      return { ok: false, error: "Keep at least one circle lead." };
+    }
+    if (targetUserId === actorId) {
+      // Allow self-demotion only when another lead remains (checked above).
+    }
+  }
+
+  await env.DB.prepare(
+    `UPDATE circle_members SET role = ? WHERE circle_id = ? AND user_id = ?`,
+  )
+    .bind(role, circleId, targetUserId)
+    .run();
+  return { ok: true };
+}
+
+export async function removeCircleMember(
+  circleId: number,
+  targetUserId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const membership = await env.DB.prepare(
+    `SELECT role FROM circle_members WHERE circle_id = ? AND user_id = ?`,
+  )
+    .bind(circleId, targetUserId)
+    .first<{ role: string }>();
+  if (!membership) return { ok: false, error: "That person is not in this circle." };
+
+  if (membership.role === "lead") {
+    const leads = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM circle_members WHERE circle_id = ? AND role = 'lead'`,
+    )
+      .bind(circleId)
+      .first<{ n: number }>();
+    if ((leads?.n ?? 0) <= 1) {
+      return { ok: false, error: "Promote another lead before removing the last lead." };
+    }
+  }
+
+  await env.DB.prepare(`DELETE FROM circle_members WHERE circle_id = ? AND user_id = ?`)
+    .bind(circleId, targetUserId)
+    .run();
+  return { ok: true };
 }
 
 export async function listCircleMembers(
