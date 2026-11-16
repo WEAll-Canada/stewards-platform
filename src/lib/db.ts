@@ -260,6 +260,14 @@ export async function reviewApplication(
     await env.DB.prepare(`UPDATE users SET status = 'disabled' WHERE id = ?`).bind(app.user_id).run();
   }
 
+  await logActivity({
+    actorId: reviewerId,
+    action: decision === "approved" ? "application.approved" : "application.rejected",
+    subjectType: "application",
+    subjectId: String(applicationId),
+    detail: `Application #${applicationId} ${decision}.`,
+  });
+
   return { ok: true };
 }
 
@@ -368,6 +376,14 @@ export async function updateAdminPerson(
         .run();
     }
   }
+
+  await logActivity({
+    actorId,
+    action: "person.updated",
+    subjectType: "user",
+    subjectId: String(userId),
+    detail: `Updated ${target.display_name || target.email}${input.status ? ` · status ${input.status}` : ""}${input.roles ? ` · roles ${input.roles.join(", ")}` : ""}.`,
+  });
 
   return { ok: true };
 }
@@ -745,6 +761,7 @@ export async function listPendingCircleJoins(): Promise<
 export async function reviewCircleJoin(
   requestId: number,
   decision: "approved" | "rejected",
+  reviewerId?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const row = await env.DB.prepare(
     `SELECT id, circle_id, user_id, status FROM circle_join_requests WHERE id = ?`,
@@ -768,6 +785,13 @@ export async function reviewCircleJoin(
       .bind(row.circle_id, row.user_id)
       .run();
   }
+  await logActivity({
+    actorId: reviewerId ?? null,
+    action: decision === "approved" ? "circle_join.approved" : "circle_join.rejected",
+    subjectType: "circle_join",
+    subjectId: String(requestId),
+    detail: `Circle join #${requestId} ${decision}.`,
+  });
   return { ok: true };
 }
 
@@ -1411,7 +1435,7 @@ export async function updateCircleDetails(
     status: "active" | "dormant";
     colorToken: string;
   },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
   const name = input.name.trim();
   if (!name) return { ok: false, error: "Name is required." };
   if (!(CIRCLE_COLOR_TOKENS as readonly string[]).includes(input.colorToken)) {
@@ -1441,7 +1465,7 @@ export async function updateCircleDetails(
     .run();
 
   if (!result.meta.changes) return { ok: false, error: "Circle not found." };
-  return { ok: true };
+  return { ok: true, name };
 }
 
 export async function setCircleMemberRole(
@@ -2081,4 +2105,245 @@ export async function getAnalyticsSnapshot(startIso: string | null): Promise<Ana
       average: totalRsvps / stewardCount,
     },
   };
+}
+
+function nowIso() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+export async function logActivity(input: {
+  actorId: number | null;
+  action: string;
+  subjectType?: string;
+  subjectId?: string;
+  detail?: string;
+}): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO activity_log (actor_id, action, subject_type, subject_id, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        input.actorId,
+        input.action.slice(0, 80),
+        (input.subjectType ?? "").slice(0, 40),
+        (input.subjectId ?? "").slice(0, 40),
+        (input.detail ?? "").slice(0, 500),
+        nowIso(),
+      )
+      .run();
+  } catch {
+    // Activity logging must never break the main action (e.g. before migration).
+  }
+}
+
+export type ActivityRow = {
+  id: number;
+  actor_id: number | null;
+  actor_name: string;
+  action: string;
+  subject_type: string;
+  subject_id: string;
+  detail: string;
+  created_at: string;
+};
+
+export async function listActivity(limit = 80): Promise<ActivityRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT a.id, a.actor_id, a.action, a.subject_type, a.subject_id, a.detail, a.created_at,
+            COALESCE(NULLIF(p.display_name, ''), u.email, 'System') AS actor_name
+     FROM activity_log a
+     LEFT JOIN users u ON u.id = a.actor_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     ORDER BY a.created_at DESC, a.id DESC
+     LIMIT ?`,
+  )
+    .bind(limit)
+    .all<ActivityRow>();
+  return results;
+}
+
+export type SurveyOptionKind = "sector" | "interest";
+
+export type SurveyOptionRow = {
+  id: number;
+  kind: SurveyOptionKind;
+  label: string;
+  sort_order: number;
+  active: number;
+};
+
+export async function listSurveyOptions(
+  kind?: SurveyOptionKind,
+  includeInactive = false,
+): Promise<SurveyOptionRow[]> {
+  const clauses: string[] = [];
+  const binds: (string | number)[] = [];
+  if (kind) {
+    clauses.push("kind = ?");
+    binds.push(kind);
+  }
+  if (!includeInactive) {
+    clauses.push("active = 1");
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const { results } = await env.DB.prepare(
+    `SELECT id, kind, label, sort_order, active
+     FROM survey_options
+     ${where}
+     ORDER BY kind, sort_order ASC, id ASC`,
+  )
+    .bind(...binds)
+    .all<SurveyOptionRow>();
+  return results;
+}
+
+export async function getSurveyLabels(kind: SurveyOptionKind): Promise<string[]> {
+  try {
+    const rows = await listSurveyOptions(kind, false);
+    if (rows.length > 0) return rows.map((r) => r.label);
+  } catch {
+    // fall through to empty — callers use hardcoded defaults
+  }
+  return [];
+}
+
+export async function addSurveyOption(
+  kind: SurveyOptionKind,
+  label: string,
+  actorId: number,
+): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  const clean = label.trim().slice(0, 80);
+  if (!clean) return { ok: false, error: "Label is required." };
+  const maxSort = await env.DB.prepare(
+    `SELECT COALESCE(MAX(sort_order), 0) AS n FROM survey_options WHERE kind = ? AND label != 'Other'`,
+  )
+    .bind(kind)
+    .first<{ n: number }>();
+  try {
+    const row = await env.DB.prepare(
+      `INSERT INTO survey_options (kind, label, sort_order, active, created_at)
+       VALUES (?, ?, ?, 1, ?)
+       RETURNING id`,
+    )
+      .bind(kind, clean, (maxSort?.n ?? 0) + 10, nowIso())
+      .first<{ id: number }>();
+    if (!row) return { ok: false, error: "Could not add option." };
+    await logActivity({
+      actorId,
+      action: "survey.option_added",
+      subjectType: "survey_option",
+      subjectId: String(row.id),
+      detail: `Added ${kind} option “${clean}”.`,
+    });
+    return { ok: true, id: row.id };
+  } catch {
+    return { ok: false, error: "That option already exists." };
+  }
+}
+
+export async function setSurveyOptionActive(
+  id: number,
+  active: boolean,
+  actorId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const row = await env.DB.prepare(`SELECT id, kind, label FROM survey_options WHERE id = ?`)
+    .bind(id)
+    .first<{ id: number; kind: string; label: string }>();
+  if (!row) return { ok: false, error: "Option not found." };
+  if (row.label === "Other" && !active) {
+    return { ok: false, error: "Keep the “Other” option available." };
+  }
+  await env.DB.prepare(`UPDATE survey_options SET active = ? WHERE id = ?`)
+    .bind(active ? 1 : 0, id)
+    .run();
+  await logActivity({
+    actorId,
+    action: active ? "survey.option_enabled" : "survey.option_disabled",
+    subjectType: "survey_option",
+    subjectId: String(id),
+    detail: `${active ? "Enabled" : "Disabled"} ${row.kind} option “${row.label}”.`,
+  });
+  return { ok: true };
+}
+
+export async function getSiteSettings(keys: string[]): Promise<Record<string, string>> {
+  if (keys.length === 0) return {};
+  const placeholders = keys.map(() => "?").join(", ");
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT key, value FROM site_settings WHERE key IN (${placeholders})`,
+    )
+      .bind(...keys)
+      .all<{ key: string; value: string }>();
+    const out: Record<string, string> = {};
+    for (const row of results) out[row.key] = row.value;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function getSiteSetting(key: string, fallback = ""): Promise<string> {
+  const map = await getSiteSettings([key]);
+  return map[key] ?? fallback;
+}
+
+export async function setSiteSettings(
+  updates: Record<string, string>,
+  actorId: number,
+): Promise<void> {
+  const stamp = nowIso();
+  for (const [key, value] of Object.entries(updates)) {
+    await env.DB.prepare(
+      `INSERT INTO site_settings (key, value, updated_at, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    )
+      .bind(key.slice(0, 80), value.slice(0, 8000), stamp, actorId)
+      .run();
+  }
+  await logActivity({
+    actorId,
+    action: "settings.updated",
+    subjectType: "site_settings",
+    subjectId: Object.keys(updates).join(",").slice(0, 40),
+    detail: `Updated settings: ${Object.keys(updates).join(", ")}.`,
+  });
+}
+
+export type DashboardBundle = {
+  threads: { id: number; other_name: string; preview: string; last_message_at: string }[];
+  commons: { id: number; title: string; summary: string }[];
+  pendingApplications: number;
+  pendingCircleJoins: number;
+};
+
+export async function getDashboardBundle(userId: number, isAdmin: boolean): Promise<DashboardBundle> {
+  const threads = (await listStewardThreads(userId)).slice(0, 4).map((t) => ({
+    id: t.id,
+    other_name: t.other_name,
+    preview: t.preview,
+    last_message_at: t.last_message_at,
+  }));
+  let commons: { id: number; title: string; summary: string }[] = [];
+  try {
+    commons = (await listKnowledgeItems("")).slice(0, 3).map((k) => ({
+      id: k.id,
+      title: k.title,
+      summary: k.summary,
+    }));
+  } catch {
+    commons = [];
+  }
+  let pendingApplications = 0;
+  let pendingCircleJoins = 0;
+  if (isAdmin) {
+    pendingApplications = (await listPendingApplications()).length;
+    pendingCircleJoins = (await listPendingCircleJoins()).length;
+  }
+  return { threads, commons, pendingApplications, pendingCircleJoins };
 }

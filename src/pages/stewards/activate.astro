@@ -1,7 +1,9 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
+import { getSiteSettings } from "../../lib/db";
 import { turnstileSiteKey } from "../../lib/protect";
+import { DEFAULT_CHARTER } from "../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (user?.status === "active") {
@@ -12,6 +14,19 @@ if (user?.status === "applicant") {
 }
 
 const siteKey = turnstileSiteKey();
+const settings = await getSiteSettings([
+  "charter_title",
+  "charter_body",
+  "charter_version",
+  "tor_fields",
+]);
+const charterTitle = settings.charter_title || DEFAULT_CHARTER.title;
+const charterBody = settings.charter_body || DEFAULT_CHARTER.body;
+const charterVersion = settings.charter_version || DEFAULT_CHARTER.version;
+const torFields = (settings.tor_fields || "")
+  .split("|")
+  .map((s) => s.trim())
+  .filter(Boolean);
 ---
 <Base title="Activate your account" active="activate" user={user}>
   <h1>Activate your account</h1>
@@ -48,10 +63,20 @@ const siteKey = turnstileSiteKey();
       <input type="checkbox" name="confirm_existing" required />
       I already participated in WEAll Canada and want to activate on this new platform
     </label>
-    <label class="check">
-      <input type="checkbox" name="charter_agreed" required />
-      I agree to the <a href="https://weallcanada.org/" target="_blank" rel="noreferrer">Living Charter</a>
-    </label>
+    <section class="agreement-box">
+      <h2>{charterTitle}</h2>
+      <p class="meta">Version {charterVersion}</p>
+      <p class="agreement-body">{charterBody}</p>
+      {torFields.length > 0 && (
+        <ul class="tor-list">
+          {torFields.map((item) => <li>{item}</li>)}
+        </ul>
+      )}
+      <label class="check">
+        <input type="checkbox" name="charter_agreed" required />
+        I agree to the {charterTitle}
+      </label>
+    </section>
     {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
     <button class="btn btn--accent" type="submit">Activate account</button>
     <p id="form-status" role="status"></p>
@@ -75,6 +100,37 @@ const siteKey = turnstileSiteKey();
 
   .invite-list li {
     margin-bottom: var(--space-2);
+  }
+
+  .agreement-box {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .agreement-box h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+  }
+
+  .agreement-body {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--color-ink-soft);
+  }
+
+  .tor-list {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: var(--color-ink-soft);
+  }
+
+  .meta {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
   }
 
   .hint {

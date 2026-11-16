@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { currentUser, hasRole } from "../../../lib/auth";
-import { getCircleBySlug, updateCircleDetails } from "../../../lib/db";
+import { getCircleBySlug, logActivity, updateCircleDetails } from "../../../lib/db";
 
 export const POST: APIRoute = async ({ request }) => {
   const user = await currentUser(request);
@@ -37,5 +37,12 @@ export const POST: APIRoute = async ({ request }) => {
   });
 
   if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+  await logActivity({
+    actorId: user.id,
+    action: "circle.updated",
+    subjectType: "circle",
+    subjectId: String(circle.id),
+    detail: `Updated circle page “${result.name}”.`,
+  });
   return Response.json({ ok: true, slug: circle.slug });
 };

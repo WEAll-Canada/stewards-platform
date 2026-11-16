@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro";
 import { normalizeAvatarInput } from "../../lib/avatars";
 import { currentUser } from "../../lib/auth";
-import { getProfileBundle, updateProfileBundle } from "../../lib/db";
-import { INTERESTS, SECTORS } from "../../lib/survey";
+import { getProfileBundle, getSurveyLabels, updateProfileBundle } from "../../lib/db";
+import { INTERESTS, SECTORS, withFallbackLabels } from "../../lib/survey";
 
 export const POST: APIRoute = async ({ request }) => {
   const user = await currentUser(request);
@@ -40,7 +40,9 @@ export const POST: APIRoute = async ({ request }) => {
   if (profile_type !== "steward" && profile_type !== "partner") {
     return Response.json({ error: "Please choose Steward or Partner." }, { status: 400 });
   }
-  if (sector && !(SECTORS as readonly string[]).includes(sector)) {
+  const sectorOptions = withFallbackLabels(await getSurveyLabels("sector"), SECTORS);
+  const interestOptions = withFallbackLabels(await getSurveyLabels("interest"), INTERESTS);
+  if (sector && !sectorOptions.includes(sector)) {
     return Response.json({ error: "Please choose a valid sector." }, { status: 400 });
   }
 
@@ -53,7 +55,7 @@ export const POST: APIRoute = async ({ request }) => {
     const existing = await getProfileBundle(user.id);
     avatar_url = existing?.avatar_url ?? "";
   }
-  const interests = [...new Set(interestsRaw.filter((i) => (INTERESTS as readonly string[]).includes(i)))].slice(0, 3);
+  const interests = [...new Set(interestsRaw.filter((i) => interestOptions.includes(i)))].slice(0, 3);
 
   await updateProfileBundle(user.id, {
     display_name: display_name.slice(0, 100),

@@ -1,0 +1,215 @@
+---
+import AdminSubnav from "../../../components/AdminSubnav.astro";
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { getSiteSettings, listSurveyOptions } from "../../../lib/db";
+import { DEFAULT_ABOUT } from "../../../lib/survey";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const sectors = await listSurveyOptions("sector", true);
+const interests = await listSurveyOptions("interest", true);
+const settings = await getSiteSettings(["about_prompt", "about_hint"]);
+const aboutPrompt = settings.about_prompt || DEFAULT_ABOUT.prompt;
+const aboutHint = settings.about_hint || DEFAULT_ABOUT.hint;
+---
+<Base title="Admin · Questions" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">Edit the profile and join-form questions stewards see.</p>
+  <AdminSubnav active="questions" />
+
+  <section class="admin-section">
+    <h2>About prompt</h2>
+    <form id="about-form" class="stack">
+      <label>Question label <input name="about_prompt" required maxlength="200" value={aboutPrompt} /></label>
+      <label>Hint text <textarea name="about_hint" rows="2" maxlength="500">{aboutHint}</textarea></label>
+      <button class="btn btn--primary" type="submit">Save about prompt</button>
+      <p id="about-status" role="status"></p>
+    </form>
+  </section>
+
+  <section class="admin-section" data-kind="sector">
+    <h2>Sectors</h2>
+    <ul class="option-list">
+      {sectors.map((opt) => (
+        <li data-id={opt.id}>
+          <span class:list={{ "is-off": !opt.active }}>{opt.label}</span>
+          {opt.label !== "Other" && (
+            <button class="btn btn--quiet" type="button" data-toggle-active data-active={opt.active ? "0" : "1"}>
+              {opt.active ? "Disable" : "Enable"}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+    <form class="add-form" data-add-kind="sector">
+      <label>
+        <span class="sr-only">New sector</span>
+        <input name="label" required maxlength="80" placeholder="Add a sector" />
+      </label>
+      <button class="btn btn--quiet" type="submit">Add</button>
+    </form>
+  </section>
+
+  <section class="admin-section" data-kind="interest">
+    <h2>Areas of interest</h2>
+    <ul class="option-list">
+      {interests.map((opt) => (
+        <li data-id={opt.id}>
+          <span class:list={{ "is-off": !opt.active }}>{opt.label}</span>
+          {opt.label !== "Other" && (
+            <button class="btn btn--quiet" type="button" data-toggle-active data-active={opt.active ? "0" : "1"}>
+              {opt.active ? "Disable" : "Enable"}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+    <form class="add-form" data-add-kind="interest">
+      <label>
+        <span class="sr-only">New interest</span>
+        <input name="label" required maxlength="80" placeholder="Add an interest" />
+      </label>
+      <button class="btn btn--quiet" type="submit">Add</button>
+    </form>
+  </section>
+  <p id="options-status" role="status"></p>
+</Base>
+
+<style>
+  .admin-section {
+    margin-bottom: var(--space-10);
+    padding-bottom: var(--space-8);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .admin-section h2 {
+    margin: 0 0 var(--space-4);
+  }
+
+  .stack,
+  .add-form {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 36rem;
+  }
+
+  .add-form {
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    margin-top: var(--space-4);
+  }
+
+  label {
+    display: grid;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .option-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .option-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    align-items: center;
+  }
+
+  .is-off {
+    color: var(--color-muted);
+    text-decoration: line-through;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+</style>
+
+<script>
+  const optionsStatus = document.querySelector<HTMLParagraphElement>("#options-status")!;
+
+  document.querySelector<HTMLFormElement>("#about-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = document.querySelector<HTMLParagraphElement>("#about-status")!;
+    const data = new FormData(form);
+    status.textContent = "Saving…";
+    const res = await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        about_prompt: data.get("about_prompt"),
+        about_hint: data.get("about_hint"),
+      }),
+    });
+    const json = await res.json();
+    status.textContent = res.ok ? "Saved." : (json.error ?? "Something went wrong.");
+  });
+
+  document.querySelectorAll<HTMLFormElement>("form[data-add-kind]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      optionsStatus.textContent = "Adding…";
+      const res = await fetch("/api/admin/survey-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add",
+          kind: form.dataset.addKind,
+          label: data.get("label"),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        optionsStatus.textContent = json.error ?? "Something went wrong.";
+        return;
+      }
+      location.reload();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-toggle-active]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const row = button.closest("li");
+      const id = Number(row?.dataset.id);
+      optionsStatus.textContent = "Updating…";
+      const res = await fetch("/api/admin/survey-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_active",
+          id,
+          active: button.dataset.active === "1",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        optionsStatus.textContent = json.error ?? "Something went wrong.";
+        return;
+      }
+      location.reload();
+    });
+  });
+</script>

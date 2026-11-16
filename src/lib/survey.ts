@@ -1,4 +1,5 @@
 // Shared welcome-survey options (language aligned with weallcanada.org/connect).
+// Runtime lists preferably come from the database (admin-editable); these are fallbacks.
 
 export const PROFILE_TYPES = [
   { value: "steward", label: "Steward (individual)" },
@@ -51,6 +52,17 @@ export const INTERESTS = [
   "Other",
 ] as const;
 
+export const DEFAULT_CHARTER = {
+  title: "Living Charter",
+  body: "As a WeAll Canada steward I will act with care for people and planet, share learning openly, honour consent and privacy in the directory, and help the alliance stay purposeful, hospitable, and accountable.",
+  version: "2026.1",
+};
+
+export const DEFAULT_ABOUT = {
+  prompt: "What else would you like to share about yourself?",
+  hint: "A free space to share as much or as little as you’d like — your work, keywords, or even a favourite poem.",
+};
+
 export type SurveyPayload = {
   profile_type: "steward" | "partner";
   contact_links: string;
@@ -63,3 +75,7 @@ export type SurveyPayload = {
   about: string;
   charter_agreed: boolean;
 };
+
+export function withFallbackLabels(dbLabels: string[], fallback: readonly string[]): string[] {
+  return dbLabels.length > 0 ? dbLabels : [...fallback];
+}

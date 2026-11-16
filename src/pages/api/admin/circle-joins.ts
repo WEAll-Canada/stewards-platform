@@ -23,7 +23,7 @@ export const POST: APIRoute = async ({ request }) => {
     return Response.json({ error: "Invalid decision." }, { status: 400 });
   }
 
-  const result = await reviewCircleJoin(requestId, decision);
+  const result = await reviewCircleJoin(requestId, decision, user.id);
   if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
   return Response.json({ ok: true });
 };

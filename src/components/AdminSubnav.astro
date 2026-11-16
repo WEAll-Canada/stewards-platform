@@ -1,42 +1,36 @@
 ---
 interface Props {
-  active: "approvals" | "people" | "analytics";
+  active: "approvals" | "people" | "questions" | "agreement" | "activity" | "analytics";
 }
 const { active } = Astro.props;
+
+const tabs = [
+  { id: "approvals", href: "/stewards/admin", label: "Approvals" },
+  { id: "people", href: "/stewards/admin/people", label: "People" },
+  { id: "questions", href: "/stewards/admin/questions", label: "Questions" },
+  { id: "agreement", href: "/stewards/admin/agreement", label: "Agreement" },
+  { id: "activity", href: "/stewards/admin/activity", label: "Activity" },
+  { id: "analytics", href: "/stewards/admin/analytics", label: "Analytics" },
+] as const;
 ---
 <nav class="tabs" role="tablist" aria-label="Admin sections">
-  <a
-    class:list={["tabs__tab", { "is-active": active === "approvals" }]}
-    href="/stewards/admin"
-    role="tab"
-    aria-selected={active === "approvals"}
-    id="tab-approvals"
-  >
-    Approvals
-  </a>
-  <a
-    class:list={["tabs__tab", { "is-active": active === "people" }]}
-    href="/stewards/admin/people"
-    role="tab"
-    aria-selected={active === "people"}
-    id="tab-people"
-  >
-    People
-  </a>
-  <a
-    class:list={["tabs__tab", { "is-active": active === "analytics" }]}
-    href="/stewards/admin/analytics"
-    role="tab"
-    aria-selected={active === "analytics"}
-    id="tab-analytics"
-  >
-    Analytics
-  </a>
+  {tabs.map((tab) => (
+    <a
+      class:list={["tabs__tab", { "is-active": active === tab.id }]}
+      href={tab.href}
+      role="tab"
+      aria-selected={active === tab.id}
+      id={`tab-${tab.id}`}
+    >
+      {tab.label}
+    </a>
+  ))}
 </nav>
 
 <style>
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
     border-bottom: 1px solid var(--color-surface-subtle);
     margin: var(--space-6) 0;

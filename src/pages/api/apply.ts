@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro";
 import { hashPassword, startSession } from "../../lib/auth";
-import { createApplicant, findUserByEmail } from "../../lib/db";
+import { createApplicant, findUserByEmail, getSurveyLabels } from "../../lib/db";
 import { checkSubmission } from "../../lib/protect";
-import { INTERESTS, SECTORS } from "../../lib/survey";
+import { INTERESTS, SECTORS, withFallbackLabels } from "../../lib/survey";
 
 const MAX_NAME = 100;
 const MAX_EMAIL = 200;
@@ -43,13 +43,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   if (!contact_links || !regions || !sector || !about) {
     return Response.json({ error: "Please complete contact, location, sector, and about you." }, { status: 400 });
   }
-  if (!(SECTORS as readonly string[]).includes(sector)) {
+  const sectorOptions = withFallbackLabels(await getSurveyLabels("sector"), SECTORS);
+  const interestOptions = withFallbackLabels(await getSurveyLabels("interest"), INTERESTS);
+  if (!sectorOptions.includes(sector)) {
     return Response.json({ error: "Please choose a valid sector." }, { status: 400 });
   }
   if (sector === "Other" && !sector_other) {
     return Response.json({ error: "Please specify your sector." }, { status: 400 });
   }
-  const interests = [...new Set(interestsRaw.filter((i) => (INTERESTS as readonly string[]).includes(i)))].slice(0, 3);
+  const interests = [...new Set(interestsRaw.filter((i) => interestOptions.includes(i)))].slice(0, 3);
   if (interests.length === 0) {
     return Response.json({ error: "Select up to 3 areas of interest (at least one)." }, { status: 400 });
   }
@@ -57,7 +59,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return Response.json({ error: "Please specify your other area of interest." }, { status: 400 });
   }
   if (!charter_agreed) {
-    return Response.json({ error: "Please agree to the Living Charter to join." }, { status: 400 });
+    return Response.json({ error: "Please agree to the alliance charter to join." }, { status: 400 });
   }
   if (name.length > MAX_NAME || email.length > MAX_EMAIL || about.length > MAX_TEXT) {
     return Response.json({ error: "One of the fields is too long." }, { status: 400 });

@@ -1,0 +1,85 @@
+---
+import AdminSubnav from "../../../components/AdminSubnav.astro";
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { listActivity } from "../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const rows = await listActivity(100);
+
+function actionLabel(action: string) {
+  return action.replace(/\./g, " · ");
+}
+---
+<Base title="Admin · Activity" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">A light trail of approvals, role changes, settings edits, and circle updates.</p>
+  <AdminSubnav active="activity" />
+
+  {rows.length === 0 ? (
+    <p class="note">No activity recorded yet.</p>
+  ) : (
+    <ul class="activity-list">
+      {rows.map((row) => (
+        <li>
+          <time datetime={row.created_at}>{row.created_at.slice(0, 16).replace("T", " ")} UTC</time>
+          <div>
+            <strong>{actionLabel(row.action)}</strong>
+            <div class="meta">
+              {row.actor_name}
+              {row.subject_type && ` · ${row.subject_type}`}
+              {row.subject_id && ` #${row.subject_id}`}
+            </div>
+            {row.detail && <p>{row.detail}</p>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+</Base>
+
+<style>
+  .activity-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .activity-list li {
+    display: grid;
+    grid-template-columns: 10rem 1fr;
+    gap: var(--space-4);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  time {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-blue);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: var(--space-1) 0 var(--space-2);
+  }
+
+  p {
+    margin: 0;
+    color: var(--color-ink-soft);
+  }
+
+  @media (max-width: 720px) {
+    .activity-list li {
+      grid-template-columns: 1fr;
+      gap: var(--space-2);
+    }
+  }
+</style>

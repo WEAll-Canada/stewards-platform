@@ -1,0 +1,104 @@
+---
+import AdminSubnav from "../../../components/AdminSubnav.astro";
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { getSiteSettings } from "../../../lib/db";
+import { DEFAULT_CHARTER } from "../../../lib/survey";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const settings = await getSiteSettings([
+  "charter_title",
+  "charter_body",
+  "charter_version",
+  "tor_fields",
+]);
+const title = settings.charter_title || DEFAULT_CHARTER.title;
+const body = settings.charter_body || DEFAULT_CHARTER.body;
+const version = settings.charter_version || DEFAULT_CHARTER.version;
+const torFields = (settings.tor_fields || "")
+  .split("|")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .join("\n");
+---
+<Base title="Admin · Agreement" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">
+    Edit the Living Charter / Terms of Responsibility that applicants agree to when they join or activate.
+  </p>
+  <AdminSubnav active="agreement" />
+
+  <form id="agreement-form" class="stack">
+    <label>Agreement title <input name="charter_title" required maxlength="120" value={title} /></label>
+    <label>Version label <input name="charter_version" maxlength="40" value={version} /></label>
+    <label>
+      Agreement body
+      <textarea name="charter_body" rows="8" required maxlength="8000">{body}</textarea>
+    </label>
+    <label>
+      ToR field list (one per line)
+      <span class="hint">Shown as a checklist of commitments under the agreement.</span>
+      <textarea name="tor_fields" rows="6" maxlength="2000">{torFields}</textarea>
+    </label>
+    <button class="btn btn--primary" type="submit">Save agreement</button>
+    <p id="agreement-status" role="status"></p>
+  </form>
+</Base>
+
+<style>
+  .stack {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 40rem;
+  }
+
+  label {
+    display: grid;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  .hint {
+    font-weight: 400;
+    color: var(--color-muted);
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+  }
+</style>
+
+<script>
+  document.querySelector<HTMLFormElement>("#agreement-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const status = document.querySelector<HTMLParagraphElement>("#agreement-status")!;
+    const data = new FormData(form);
+    const tor = String(data.get("tor_fields") ?? "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join("|");
+    status.textContent = "Saving…";
+    const res = await fetch("/api/admin/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        charter_title: data.get("charter_title"),
+        charter_version: data.get("charter_version"),
+        charter_body: data.get("charter_body"),
+        tor_fields: tor,
+      }),
+    });
+    const json = await res.json();
+    status.textContent = res.ok ? "Saved." : (json.error ?? "Something went wrong.");
+  });
+</script>

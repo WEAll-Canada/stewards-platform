@@ -509,6 +509,74 @@ test("admin analytics shows ranges, steward metrics, and trends", async ({ reque
   expect(blocked.headers()["location"] || "").toContain("/stewards/dashboard");
 });
 
+test("admin can edit profile questions, agreement, and see activity", async ({ request }) => {
+  const cookie = await login(request, "admin@weallcanada.local");
+
+  const questions = await request.get("/stewards/admin/questions", { headers: { cookie } });
+  expect(questions.status()).toBe(200);
+  const qHtml = await questions.text();
+  expect(qHtml).toContain('id="tab-questions"');
+  expect(qHtml).toContain("Areas of interest");
+  expect(qHtml).toContain("Climate");
+
+  const addInterest = await request.post("/api/admin/survey-options", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { action: "add", kind: "interest", label: `Test Interest ${Date.now()}` },
+  });
+  expect(addInterest.status()).toBe(200);
+
+  const agreement = await request.get("/stewards/admin/agreement", { headers: { cookie } });
+  expect(agreement.status()).toBe(200);
+  const aHtml = await agreement.text();
+  expect(aHtml).toContain('id="tab-agreement"');
+  expect(aHtml).toContain("Living Charter");
+
+  const saveAgreement = await request.post("/api/admin/settings", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      charter_title: "Living Charter",
+      charter_version: "2026.1-test",
+      charter_body: "Updated charter body for automated tests.",
+      tor_fields: "Care for people|Share learning",
+    },
+  });
+  expect(saveAgreement.status()).toBe(200);
+
+  const agreementReload = await request.get("/stewards/admin/agreement", { headers: { cookie } });
+  expect(agreementReload.status()).toBe(200);
+  const agreementHtml = await agreementReload.text();
+  expect(agreementHtml).toContain("Updated charter body for automated tests.");
+  expect(agreementHtml).toContain("Care for people");
+  expect(agreementHtml).toContain("2026.1-test");
+
+  await request.post("/api/logout", { headers: { cookie, ...asVisitor() } });
+  const applyPage = await request.get("/stewards/apply");
+  expect(applyPage.status()).toBe(200);
+  const applyHtml = await applyPage.text();
+  expect(applyHtml).toContain("Updated charter body for automated tests.");
+  expect(applyHtml).toContain("Care for people");
+  expect(applyHtml).toContain("2026.1-test");
+
+  const adminCookie = await login(request, "admin@weallcanada.local");
+  const activity = await request.get("/stewards/admin/activity", { headers: { cookie: adminCookie } });
+  expect(activity.status()).toBe(200);
+  const actHtml = await activity.text();
+  expect(actHtml).toContain('id="tab-activity"');
+  expect(actHtml).toMatch(/settings|survey|Updated settings/i);
+});
+
+test("dashboard shows bento panels for messages, commons, and events", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const page = await request.get("/stewards/dashboard", { headers: { cookie } });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain("dash-bento");
+  expect(html).toContain("From the Commons");
+  expect(html).toContain("Messages");
+  expect(html).toContain("Events today");
+  expect(html).toContain("Knowledge Commons");
+});
+
 test("interest matching finds stewards by topic and network map renders", async ({ request }) => {
   const cookie = await login(request, "alex@weallcanada.local");
 

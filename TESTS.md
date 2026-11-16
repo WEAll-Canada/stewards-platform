@@ -39,3 +39,5 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Circle detail pages show resources and decision log; members can add both. (tests/stewards-platform.spec.ts)
 - [auto] Events show RSVP counts/maybe, and signed-in stewards can download an .ics calendar feed. (tests/stewards-platform.spec.ts)
 - [auto] Circle leads/admins can edit circle page details and manage member/lead roles; non-leads are redirected away from edit. (tests/stewards-platform.spec.ts)
+- [auto] Admin can edit profile questions and Living Charter/ToR; join page shows the updated agreement; activity trail records settings changes. (tests/stewards-platform.spec.ts)
+- [auto] Dashboard bento shows messages, commons, and events panels. (tests/stewards-platform.spec.ts)

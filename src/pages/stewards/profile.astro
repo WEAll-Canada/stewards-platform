@@ -3,8 +3,14 @@ import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
 import { AVATAR_PRESETS, resolveAvatarSrc } from "../../lib/avatars";
 import { currentUser } from "../../lib/auth";
-import { getProfileBundle } from "../../lib/db";
-import { INTERESTS, PROFILE_TYPES, SECTORS } from "../../lib/survey";
+import { getProfileBundle, getSiteSettings, getSurveyLabels } from "../../lib/db";
+import {
+  DEFAULT_ABOUT,
+  INTERESTS,
+  PROFILE_TYPES,
+  SECTORS,
+  withFallbackLabels,
+} from "../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
@@ -17,6 +23,10 @@ const selectedInterests = new Set((profile.interests || "").split("|").filter(Bo
 const tabParam = Astro.url.searchParams.get("tab");
 const activeTab = tabParam === "settings" ? "settings" : "profile";
 const previewSrc = resolveAvatarSrc(profile.avatar_url, profile.display_name);
+const sectors = withFallbackLabels(await getSurveyLabels("sector"), SECTORS);
+const interests = withFallbackLabels(await getSurveyLabels("interest"), INTERESTS);
+const aboutSettings = await getSiteSettings(["about_prompt"]);
+const aboutPrompt = aboutSettings.about_prompt || DEFAULT_ABOUT.prompt;
 ---
 <Base title={activeTab === "settings" ? "Settings" : "Profile"} active="profile" user={user}>
   <h1>Your account</h1>
@@ -117,7 +127,7 @@ const previewSrc = resolveAvatarSrc(profile.avatar_url, profile.display_name);
           Sector
           <select name="sector">
             <option value="">Choose one…</option>
-            {SECTORS.map((s) => (
+            {sectors.map((s) => (
               <option value={s} selected={profile.sector === s}>{s}</option>
             ))}
           </select>
@@ -130,7 +140,7 @@ const previewSrc = resolveAvatarSrc(profile.avatar_url, profile.display_name);
         <fieldset>
           <legend>Areas of interest (up to 3)</legend>
           <div class="interest-grid">
-            {INTERESTS.map((i) => (
+            {interests.map((i) => (
               <label class="check">
                 <input type="checkbox" name="interests" value={i} checked={selectedInterests.has(i)} />
                 {i}
@@ -144,7 +154,7 @@ const previewSrc = resolveAvatarSrc(profile.avatar_url, profile.display_name);
         </label>
 
         <label>
-          What else would you like to share?
+          {aboutPrompt}
           <textarea name="about" rows="4" maxlength="4000">{profile.about || profile.bio}</textarea>
         </label>
 

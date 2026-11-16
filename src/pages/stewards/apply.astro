@@ -1,8 +1,16 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
+import { getSiteSettings, getSurveyLabels } from "../../lib/db";
 import { turnstileSiteKey } from "../../lib/protect";
-import { INTERESTS, PROFILE_TYPES, SECTORS } from "../../lib/survey";
+import {
+  DEFAULT_ABOUT,
+  DEFAULT_CHARTER,
+  INTERESTS,
+  PROFILE_TYPES,
+  SECTORS,
+  withFallbackLabels,
+} from "../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (user?.status === "active") {
@@ -13,6 +21,25 @@ if (user?.status === "applicant") {
 }
 
 const siteKey = turnstileSiteKey();
+const sectors = withFallbackLabels(await getSurveyLabels("sector"), SECTORS);
+const interests = withFallbackLabels(await getSurveyLabels("interest"), INTERESTS);
+const settings = await getSiteSettings([
+  "charter_title",
+  "charter_body",
+  "charter_version",
+  "tor_fields",
+  "about_prompt",
+  "about_hint",
+]);
+const charterTitle = settings.charter_title || DEFAULT_CHARTER.title;
+const charterBody = settings.charter_body || DEFAULT_CHARTER.body;
+const charterVersion = settings.charter_version || DEFAULT_CHARTER.version;
+const torFields = (settings.tor_fields || "")
+  .split("|")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const aboutPrompt = settings.about_prompt || DEFAULT_ABOUT.prompt;
+const aboutHint = settings.about_hint || DEFAULT_ABOUT.hint;
 ---
 <Base title="Join" active="apply" user={user}>
   <h1>Join WEAll Canada to help transform the economy</h1>
@@ -25,7 +52,7 @@ const siteKey = turnstileSiteKey();
     <li>You want to participate in an adaptive learning &amp; coordination process involving a wide array of people and organizations</li>
     <li>You acknowledge that none of us have ‘the solution’, but we all hold a piece of the puzzle</li>
     <li>You see this process as multi-layered: involving personal mindset shift, relational learning, cultural evolution, as well as economic and policy change</li>
-    <li>You agree to our <a href="https://weallcanada.org/" target="_blank" rel="noreferrer">Living Charter</a></li>
+    <li>You agree to our {charterTitle}</li>
   </ul>
 
   <div class="role-cards">
@@ -81,7 +108,7 @@ const siteKey = turnstileSiteKey();
       Which sector best describes your work?
       <select name="sector" required>
         <option value="">Choose one…</option>
-        {SECTORS.map((s) => <option value={s}>{s}</option>)}
+        {sectors.map((s) => <option value={s}>{s}</option>)}
       </select>
     </label>
     <label>
@@ -93,7 +120,7 @@ const siteKey = turnstileSiteKey();
     <fieldset>
       <legend>Which areas of interest best describe your work? (Select up to 3)</legend>
       <div class="interest-grid">
-        {INTERESTS.map((i) => (
+        {interests.map((i) => (
           <label class="check">
             <input type="checkbox" name="interests" value={i} />
             {i}
@@ -108,15 +135,25 @@ const siteKey = turnstileSiteKey();
     </label>
 
     <label>
-      What else would you like to share about yourself?
-      <span class="hint">A free space to share as much or as little as you’d like — your work, keywords, or even a favourite poem.</span>
+      {aboutPrompt}
+      <span class="hint">{aboutHint}</span>
       <textarea name="about" rows="5" required maxlength="4000"></textarea>
     </label>
 
-    <label class="check">
-      <input type="checkbox" name="charter_agreed" required />
-      I agree to the Living Charter
-    </label>
+    <section class="agreement-box">
+      <h2>{charterTitle}</h2>
+      <p class="meta">Version {charterVersion}</p>
+      <p class="agreement-body">{charterBody}</p>
+      {torFields.length > 0 && (
+        <ul class="tor-list">
+          {torFields.map((item) => <li>{item}</li>)}
+        </ul>
+      )}
+      <label class="check">
+        <input type="checkbox" name="charter_agreed" required />
+        I agree to the {charterTitle}
+      </label>
+    </section>
 
     {siteKey && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
     <button class="btn btn--primary" type="submit">Join the alliance</button>
@@ -152,6 +189,31 @@ const siteKey = turnstileSiteKey();
 
   .survey {
     max-width: 40rem;
+  }
+
+  .agreement-box {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .agreement-box h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+  }
+
+  .agreement-body {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--color-ink-soft);
+  }
+
+  .tor-list {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: var(--color-ink-soft);
   }
 
   fieldset {
