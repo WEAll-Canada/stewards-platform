@@ -39,6 +39,7 @@ export const POST: APIRoute = async ({ request }) => {
     to: target.to,
     body: text,
     providerId: sent.providerId,
+    adminName: user.display_name || user.email,
   });
 
   return Response.json({ ok: true, mode: sent.mode });

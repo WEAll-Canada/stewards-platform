@@ -1,0 +1,451 @@
+---
+import AdminSubnav from "../../../components/AdminSubnav.astro";
+import Base from "../../../layouts/Base.astro";
+import {
+  fillTimeseries,
+  maxSeriesValue,
+  parseAnalyticsRange,
+  rangeStartIso,
+  todayKey,
+  type TimeseriesPoint,
+} from "../../../lib/analytics";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { getAnalyticsSnapshot } from "../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const range = parseAnalyticsRange(Astro.url.searchParams.get("range"));
+const startIso = rangeStartIso(range);
+const endKey = todayKey();
+const snap = await getAnalyticsSnapshot(startIso);
+
+const earliestData = [
+  ...snap.series.newStewards,
+  ...snap.series.pageViews,
+  ...snap.series.stewardMessages,
+  ...snap.series.applications,
+]
+  .map((r) => r.day.slice(0, 10))
+  .sort()[0];
+const startKey =
+  startIso?.slice(0, 10) ??
+  earliestData ??
+  rangeStartIso("90d")!.slice(0, 10);
+
+const series = {
+  newStewards: fillTimeseries(snap.series.newStewards, startKey, endKey),
+  pageViews: fillTimeseries(snap.series.pageViews, startKey, endKey),
+  stewardMessages: fillTimeseries(snap.series.stewardMessages, startKey, endKey),
+  applications: fillTimeseries(snap.series.applications, startKey, endKey),
+};
+
+function barHeights(points: TimeseriesPoint[]) {
+  const max = maxSeriesValue(points);
+  return points.map((p) => ({
+    ...p,
+    pct: Math.round((p.value / max) * 100),
+  }));
+}
+
+const charts = [
+  { title: "New active stewards / day", color: "var(--color-cyan)", points: barHeights(series.newStewards) },
+  { title: "Page views / day", color: "var(--color-yellow)", points: barHeights(series.pageViews) },
+  { title: "Steward DMs / day", color: "var(--color-orange)", points: barHeights(series.stewardMessages) },
+  { title: "Applications / day", color: "var(--color-green)", points: barHeights(series.applications) },
+];
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-CA").format(n);
+}
+
+function fmtAvg(n: number) {
+  return new Intl.NumberFormat("en-CA", { maximumFractionDigits: 1 }).format(n);
+}
+
+const ranges = [
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+  { value: "all", label: "All time" },
+] as const;
+---
+<Base title="Admin · Analytics" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">
+    Alliance health at a glance — Festival-style trends plus Stewards-specific network, circle, and email signals.
+  </p>
+  <AdminSubnav active="analytics" />
+
+  <div class="range-row" role="group" aria-label="Date range">
+    {ranges.map((r) => (
+      <a
+        class:list={["range-chip", { "is-active": range === r.value }]}
+        href={`/stewards/admin/analytics?range=${r.value}`}
+      >
+        {r.label}
+      </a>
+    ))}
+  </div>
+  <p class="meta">
+    Showing {range === "all" ? `all time (${startKey} → ${endKey})` : `${startKey} → ${endKey}`} (UTC).
+  </p>
+
+  <h2>Snapshot</h2>
+  <div class="stat-grid">
+    <div class="stat"><span class="stat__label">Active stewards</span><strong>{fmt(snap.activeStewards)}</strong></div>
+    <div class="stat"><span class="stat__label">Pending applications</span><strong>{fmt(snap.pendingApplications)}</strong></div>
+    <div class="stat"><span class="stat__label">In directory</span><strong>{fmt(snap.directoryVisible)}</strong></div>
+    <div class="stat"><span class="stat__label">Open inbox threads</span><strong>{fmt(snap.openInboxThreads)}</strong></div>
+    <div class="stat"><span class="stat__label">Connections logged</span><strong>{fmt(snap.connectionsTotal)}</strong></div>
+    <div class="stat"><span class="stat__label">Circle memberships</span><strong>{fmt(snap.circleMemberships)}</strong></div>
+    <div class="stat"><span class="stat__label">Campaigns sent</span><strong>{fmt(snap.campaignsSent)}</strong></div>
+    <div class="stat"><span class="stat__label">Events</span><strong>{fmt(snap.eventsTotal)}</strong></div>
+  </div>
+
+  <h2>This period</h2>
+  <div class="stat-grid">
+    <div class="stat"><span class="stat__label">New stewards</span><strong>{fmt(snap.newStewardsPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Applications</span><strong>{fmt(snap.applicationsPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Page views</span><strong>{fmt(snap.pageViewsPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Page views today</span><strong>{fmt(snap.pageViewsToday)}</strong></div>
+    <div class="stat"><span class="stat__label">Steward DMs</span><strong>{fmt(snap.stewardMessagesPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Alliance email replies</span><strong>{fmt(snap.emailRepliesPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Event RSVPs (all-time)</span><strong>{fmt(snap.rsvpsPeriod)}</strong></div>
+    <div class="stat"><span class="stat__label">Avg RSVPs / steward</span><strong>{fmtAvg(snap.rsvpStats.average)}</strong></div>
+  </div>
+
+  <h2>Trends</h2>
+  <div class="chart-grid">
+    {charts.map((chart) => (
+      <section class="chart-card">
+        <h3>{chart.title}</h3>
+        <div class="bars" role="img" aria-label={chart.title}>
+          {chart.points.map((p) => (
+            <div class="bar" title={`${p.date}: ${p.value}`}>
+              <span class="bar__fill" style={`height:${p.pct}%;background:${chart.color}`}></span>
+            </div>
+          ))}
+        </div>
+        <div class="chart-meta">
+          <span>{chart.points[0]?.date}</span>
+          <span>{chart.points.at(-1)?.date}</span>
+        </div>
+      </section>
+    ))}
+  </div>
+
+  <div class="split">
+    <section>
+      <h2>Top pages</h2>
+      {snap.topPaths.length === 0 ? (
+        <p class="note">No page views yet — browse steward pages while signed in to populate this.</p>
+      ) : (
+        <ol class="rank-list">
+          {snap.topPaths.map((row) => (
+            <li>
+              <code>{row.path}</code>
+              <strong>{fmt(row.view_count)}</strong>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+
+    <section>
+      <h2>Circle membership</h2>
+      <ul class="bar-list">
+        {snap.circleSizes.map((row) => {
+          const max = Math.max(1, ...snap.circleSizes.map((c) => c.count));
+          return (
+            <li>
+              <div class="bar-list__label">
+                <span>{row.label}</span>
+                <strong>{fmt(row.count)}</strong>
+              </div>
+              <div class="bar-list__track">
+                <span style={`width:${Math.round((row.count / max) * 100)}%`}></span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  </div>
+
+  <div class="split">
+    <section>
+      <h2>Interest mix</h2>
+      <p class="meta">Unique to Stewards — what directory stewards care about.</p>
+      {snap.interests.length === 0 ? (
+        <p class="note">No interest tags yet.</p>
+      ) : (
+        <ul class="bar-list">
+          {snap.interests.map((row) => {
+            const max = Math.max(1, ...snap.interests.map((i) => i.count));
+            return (
+              <li>
+                <div class="bar-list__label">
+                  <span>{row.label}</span>
+                  <strong>{fmt(row.count)}</strong>
+                </div>
+                <div class="bar-list__track">
+                  <span class="interest" style={`width:${Math.round((row.count / max) * 100)}%`}></span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+
+    <section>
+      <h2>Connection strength</h2>
+      <p class="meta">How closely stewards say they’re linked.</p>
+      {snap.connectionStrengths.length === 0 ? (
+        <p class="note">No connections logged yet.</p>
+      ) : (
+        <ul class="bar-list">
+          {snap.connectionStrengths.map((row) => {
+            const max = Math.max(1, ...snap.connectionStrengths.map((c) => c.count));
+            return (
+              <li>
+                <div class="bar-list__label">
+                  <span>{row.label}</span>
+                  <strong>{fmt(row.count)}</strong>
+                </div>
+                <div class="bar-list__track">
+                  <span class="conn" style={`width:${Math.round((row.count / max) * 100)}%`}></span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <h2 class="spaced">Event RSVP frequency</h2>
+      <p class="meta">
+        {fmt(snap.rsvpStats.withRsvp)} of {fmt(snap.rsvpStats.stewardCount)} stewards have at least one RSVP.
+      </p>
+      <ul class="bar-list">
+        {snap.rsvpBuckets.map((row) => {
+          const max = Math.max(1, ...snap.rsvpBuckets.map((b) => b.count));
+          return (
+            <li>
+              <div class="bar-list__label">
+                <span>{row.label} events</span>
+                <strong>{fmt(row.count)}</strong>
+              </div>
+              <div class="bar-list__track">
+                <span class="rsvp" style={`width:${Math.round((row.count / max) * 100)}%`}></span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  </div>
+</Base>
+
+<style>
+  .lede {
+    color: var(--color-ink-soft);
+    max-width: 44rem;
+  }
+
+  .range-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .range-chip {
+    text-decoration: none;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    padding: 0.4rem 0.85rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-surface-subtle);
+    color: var(--color-ink-soft);
+  }
+
+  .range-chip.is-active {
+    background: var(--color-ink);
+    color: var(--color-surface);
+    border-color: var(--color-ink);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-6);
+  }
+
+  h2 {
+    margin: var(--space-8) 0 var(--space-3);
+    font-size: var(--text-lg);
+  }
+
+  h2.spaced {
+    margin-top: var(--space-8);
+  }
+
+  h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .stat {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .stat__label {
+    display: block;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+    margin-bottom: var(--space-1);
+  }
+
+  .stat strong {
+    font-size: var(--text-xl);
+  }
+
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+
+  .chart-card {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  .bars {
+    display: flex;
+    align-items: end;
+    gap: 2px;
+    height: 8rem;
+    background: linear-gradient(to top, var(--color-surface-subtle), transparent);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-1) 0;
+  }
+
+  .bar {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: end;
+  }
+
+  .bar__fill {
+    display: block;
+    width: 100%;
+    min-height: 2px;
+    border-radius: 2px 2px 0 0;
+  }
+
+  .chart-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-muted);
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+
+  .rank-list,
+  .bar-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .rank-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .rank-list code {
+    font-size: var(--text-sm);
+  }
+
+  .bar-list__label {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    margin-bottom: 0.25rem;
+  }
+
+  .bar-list__track {
+    height: 0.5rem;
+    background: var(--color-surface-subtle);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+  }
+
+  .bar-list__track span {
+    display: block;
+    height: 100%;
+    background: var(--color-cyan);
+    border-radius: var(--radius-pill);
+  }
+
+  .bar-list__track span.interest {
+    background: var(--color-green);
+  }
+
+  .bar-list__track span.conn {
+    background: var(--color-orange);
+  }
+
+  .bar-list__track span.rsvp {
+    background: var(--color-yellow);
+  }
+
+  .note {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 900px) {
+    .stat-grid,
+    .chart-grid,
+    .split {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .stat-grid,
+    .chart-grid,
+    .split {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

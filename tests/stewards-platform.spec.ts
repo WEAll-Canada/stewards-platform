@@ -244,9 +244,17 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
   const inbox = await request.get("/stewards/email?tab=inbox", { headers: { cookie } });
   expect(inbox.status()).toBe(200);
   const inboxHtml = await inbox.text();
+  expect(inboxHtml).toContain('id="tab-inbox"');
   expect(inboxHtml).toContain('aria-selected="true"');
   expect(inboxHtml).toContain("Workshop follow-up");
   expect(inboxHtml).toContain('name="q"');
+  expect(inboxHtml).toContain("inbox-layout");
+
+  const opened = await request.get("/stewards/email?tab=inbox&thread=2", { headers: { cookie } });
+  expect(opened.status()).toBe(200);
+  const openedHtml = await opened.text();
+  expect(openedHtml).toContain("Send reply");
+  expect(openedHtml).toContain("Mark closed");
 
   const filtered = await request.get("/stewards/email?tab=inbox&q=Halifax", { headers: { cookie } });
   expect(filtered.status()).toBe(200);
@@ -259,6 +267,14 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
   const campaignsHtml = await campaigns.text();
   expect(campaignsHtml).toContain("New campaign");
   expect(campaignsHtml).toContain('id="tab-campaigns"');
+  expect(campaignsHtml).toContain('role="tablist"');
+
+  const composer = await request.get("/stewards/email/campaigns", { headers: { cookie } });
+  expect(composer.status()).toBe(200);
+  const composerHtml = await composer.text();
+  expect(composerHtml).toContain("Load template");
+  expect(composerHtml).toContain("Audience");
+  expect(composerHtml).toContain("Send test to me");
 
   const reply = await request.post("/api/email/reply", {
     headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
@@ -267,13 +283,26 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
   expect(reply.status()).toBe(200);
   expect((await reply.json()).mode).toBe("simulated");
 
+  const draft = await request.post("/api/email/campaigns", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      action: "draft",
+      name: "Draft campaign",
+      subject: "Draft subject",
+      bodyHtml: "<p>Hi {{display_name}}</p>",
+      segmentKind: "all_opted_in",
+    },
+  });
+  expect(draft.status()).toBe(200);
+  expect((await draft.json()).mode).toBe("draft");
+
   // Discover opt-in count via mismatch
   const probe = await request.post("/api/email/campaigns", {
     headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
     data: {
       name: "Test campaign",
       subject: "Hello stewards",
-      body: "This is a simulated campaign.",
+      bodyHtml: "<p>This is a simulated campaign.</p>",
       confirmCount: -1,
     },
   });
@@ -286,12 +315,34 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
     data: {
       name: "Test campaign",
       subject: "Hello stewards",
-      body: "This is a simulated campaign.",
+      bodyHtml: "<p>This is a simulated campaign for {{display_name}}.</p>",
+      segmentKind: "all_opted_in",
       confirmCount: recipientCount,
     },
   });
   expect(send.status()).toBe(200);
   expect((await send.json()).mode).toBe("simulated");
+});
+
+test("admin analytics shows ranges, steward metrics, and trends", async ({ request }) => {
+  const cookie = await login(request, "admin@weallcanada.local");
+  const page = await request.get("/stewards/admin/analytics?range=30d", { headers: { cookie } });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain('id="tab-analytics"');
+  expect(html).toContain("Active stewards");
+  expect(html).toContain("Interest mix");
+  expect(html).toContain("Connection strength");
+  expect(html).toContain("Event RSVP frequency");
+  expect(html).toContain("Top pages");
+  expect(html).toContain('href="/stewards/admin/analytics?range=7d"');
+
+  const blocked = await request.get("/stewards/admin/analytics", {
+    headers: { cookie: await login(request, "alex@weallcanada.local") },
+    maxRedirects: 0,
+  });
+  expect(blocked.status()).toBe(302);
+  expect(blocked.headers()["location"] || "").toContain("/stewards/dashboard");
 });
 
 test("interest matching finds stewards by topic and network map renders", async ({ request }) => {

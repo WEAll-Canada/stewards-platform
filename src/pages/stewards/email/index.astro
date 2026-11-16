@@ -1,7 +1,11 @@
 ---
 import Base from "../../../layouts/Base.astro";
 import { currentUser, hasRole } from "../../../lib/auth";
-import { listCampaigns, listEmailThreads } from "../../../lib/db";
+import {
+  getEmailThread,
+  listCampaigns,
+  listEmailThreads,
+} from "../../../lib/db";
 import { emailConfigured } from "../../../lib/email";
 
 const user = await currentUser(Astro.request);
@@ -14,18 +18,36 @@ const tabParam = Astro.url.searchParams.get("tab");
 const activeTab = tabParam === "campaigns" ? "campaigns" : "inbox";
 const q = Astro.url.searchParams.get("q") ?? "";
 const statusFilter = Astro.url.searchParams.get("status") ?? "";
+const selectedThreadId = Number(Astro.url.searchParams.get("thread") || 0);
 
 const threads = activeTab === "inbox" ? await listEmailThreads({ q, status: statusFilter }) : [];
+const selected =
+  activeTab === "inbox" && selectedThreadId
+    ? await getEmailThread(selectedThreadId)
+    : { thread: null, messages: [] };
 const campaigns = activeTab === "campaigns" ? await listCampaigns() : [];
+const drafts = campaigns.filter((c) => c.status === "draft");
+const sentCampaigns = campaigns.filter((c) => c.status !== "draft");
 const live = emailConfigured();
+const isAdmin = hasRole(user, "admin");
+
+function formatWhen(iso: string) {
+  return iso.slice(0, 16).replace("T", " ");
+}
+
+function parseStats(raw: string) {
+  try {
+    return JSON.parse(raw || "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
 ---
 <Base title="Email" active="email" user={user}>
   <h1>Alliance email</h1>
   <p class="lede">
-    {activeTab === "inbox"
-      ? "Receive and reply to mail for hello@weallcanada.com"
-      : "Plan and send outbound campaigns to opted-in stewards"}
-    {live ? " · live sending on" : " · local simulate mode (no RESEND_API_KEY)"}.
+    Communications for hello@weallcanada.com — inbox replies and steward campaigns.
+    {live ? "Live sending is on." : "Local simulate mode (no RESEND_API_KEY yet)."}
   </p>
 
   <div class="tabs" role="tablist" aria-label="Email sections">
@@ -53,6 +75,7 @@ const live = emailConfigured();
     <section class="tab-panel" role="tabpanel" aria-labelledby="tab-inbox">
       <form class="email-filters" method="get" action="/stewards/email" role="search">
         <input type="hidden" name="tab" value="inbox" />
+        {selectedThreadId > 0 && <input type="hidden" name="thread" value={String(selectedThreadId)} />}
         <label class="email-filters__search">
           Search
           <input type="search" name="q" value={q} placeholder="Subject, sender, or text…" maxlength="120" />
@@ -73,40 +96,147 @@ const live = emailConfigured();
         </div>
       </form>
 
-      {threads.length === 0 ? (
-        <p class="note">No threads match these filters.</p>
-      ) : (
-        <ul class="email-list">
-          {threads.map((t) => (
-            <li>
-              <a href={`/stewards/email/${t.id}`}>
-                <div class="email-list__row">
-                  <strong>{t.subject}</strong>
-                  <span class:list={["status-pill", { closed: t.status === "closed" }]}>{t.status}</span>
+      <div class="inbox-layout">
+        <aside class="thread-list">
+          {threads.length === 0 ? (
+            <p class="note">No threads match these filters.</p>
+          ) : (
+            <ul>
+              {threads.map((t) => (
+                <li>
+                  <a
+                    class:list={{ "is-active": t.id === selectedThreadId }}
+                    href={`/stewards/email?tab=inbox&thread=${t.id}${q ? `&q=${encodeURIComponent(q)}` : ""}${statusFilter ? `&status=${statusFilter}` : ""}`}
+                  >
+                    <div class="email-list__row">
+                      <strong>{t.subject}</strong>
+                      <span class:list={["status-pill", { closed: t.status === "closed" }]}>{t.status}</span>
+                    </div>
+                    <div class="meta">{t.from_addr || "Unknown sender"} · {formatWhen(t.last_message_at)}</div>
+                    {t.last_admin_name && <div class="meta">Last reply: {t.last_admin_name}</div>}
+                    <div class="meta preview">{t.preview.slice(0, 110)}</div>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+
+        <section class="thread-pane">
+          {!selected.thread ? (
+            <p class="note">Select a conversation to read and reply.</p>
+          ) : (
+            <>
+              <header class="thread-pane__header">
+                <div>
+                  <h2>{selected.thread.subject}</h2>
+                  <p class="meta">
+                    {selected.thread.from_addr || "Unknown sender"}
+                    {selected.thread.last_admin_name
+                      ? ` · last admin reply by ${selected.thread.last_admin_name}`
+                      : ""}
+                  </p>
                 </div>
-                <div class="meta">{t.last_message_at.slice(0, 16).replace("T", " ")}</div>
-                <div class="meta">{t.preview.slice(0, 140)}</div>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
+                <button
+                  class="btn btn--quiet"
+                  type="button"
+                  id="toggle-status"
+                  data-thread={selected.thread.id}
+                  data-status={selected.thread.status}
+                >
+                  Mark {selected.thread.status === "open" ? "closed" : "open"}
+                </button>
+              </header>
+
+              <div class="message-log">
+                {selected.messages.map((m) => (
+                  <div class:list={["bubble", { out: m.direction === "outbound" }]}>
+                    <div class="meta">
+                      {m.direction === "outbound"
+                        ? `Outbound · ${m.admin_name || m.from_addr}`
+                        : `Inbound · ${m.from_addr}`}
+                      {" · "}
+                      {formatWhen(m.created_at)}
+                    </div>
+                    <p>{m.body_text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <form id="reply-form" class="stack" data-thread={selected.thread.id}>
+                <label>
+                  Reply
+                  <textarea name="body" rows="5" required placeholder="Write a reply…"></textarea>
+                </label>
+                <button class="btn btn--primary" type="submit">Send reply</button>
+                <p id="reply-status" role="status"></p>
+              </form>
+            </>
+          )}
+        </section>
+      </div>
     </section>
   ) : (
     <section class="tab-panel" role="tabpanel" aria-labelledby="tab-campaigns">
-      <p><a class="btn btn--accent" href="/stewards/email/campaigns">New campaign</a></p>
-      {campaigns.length === 0 ? (
+      <div class="campaigns-toolbar">
+        <p class="note">
+          Templates, audience filters, HTML preview, test send, and confirm-before-send — Festival campaign behaviour on Workers.
+        </p>
+        {isAdmin && (
+          <a class="btn btn--accent" href="/stewards/email/campaigns">New campaign</a>
+        )}
+      </div>
+
+      {!isAdmin && (
+        <p class="note">Circle leads can view campaigns; only platform admins can compose and send.</p>
+      )}
+
+      {drafts.length > 0 && (
+        <>
+          <h2>Drafts</h2>
+          <ul class="email-list">
+            {drafts.map((c) => (
+              <li>
+                <a class="email-list__static" href={`/stewards/email/campaigns?draft=${c.id}`}>
+                  <strong>{c.name || "Untitled draft"}</strong>
+                  <div class="meta">{c.subject} · updated {formatWhen(c.updated_at)}</div>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <h2>Sent & simulated</h2>
+      {sentCampaigns.length === 0 ? (
         <p class="note">No campaigns yet.</p>
       ) : (
         <ul class="email-list">
-          {campaigns.map((c) => (
-            <li>
-              <div class="email-list__static">
-                <strong>{c.name}</strong>
-                <div class="meta">{c.subject} · {c.recipient_count} people · {c.status}</div>
-              </div>
-            </li>
-          ))}
+          {sentCampaigns.map((c) => {
+            const stats = parseStats(c.stats_json);
+            return (
+              <li>
+                <a class="email-list__static" href={`/stewards/email/campaigns/${c.id}`}>
+                  <div class="email-list__row">
+                    <strong>{c.name}</strong>
+                    <span class="status-pill">{c.status}</span>
+                  </div>
+                  <div class="meta">{c.subject}</div>
+                  <div class="meta">
+                    {c.recipient_count} people · {c.campaign_type} · segment {c.segment}
+                    {c.sent_at ? ` · ${formatWhen(c.sent_at)}` : ""}
+                  </div>
+                  <div class="meta">
+                    Sent {stats.sent ?? c.recipient_count}
+                    {" · "}Delivered {stats.delivered ?? 0}
+                    {" · "}Opened {stats.opened ?? 0}
+                    {" · "}Clicked {stats.clicked ?? 0}
+                    {" · "}Bounced {stats.bounced ?? 0}
+                  </div>
+                </a>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -114,6 +244,11 @@ const live = emailConfigured();
 </Base>
 
 <style>
+  .lede {
+    color: var(--color-ink-soft);
+    max-width: 42rem;
+  }
+
   .tabs {
     display: flex;
     gap: var(--space-2);
@@ -136,6 +271,10 @@ const live = emailConfigured();
     border-bottom-color: var(--color-cyan);
   }
 
+  .tab-panel {
+    margin-top: var(--space-4);
+  }
+
   .email-filters {
     display: grid;
     grid-template-columns: 1.6fr 10rem auto;
@@ -146,47 +285,139 @@ const live = emailConfigured();
 
   .email-filters label {
     margin: 0;
+    display: grid;
+    gap: var(--space-2);
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  .email-filters input,
+  .email-filters select {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
   }
 
   .email-filters__actions {
     display: flex;
     gap: var(--space-2);
+    align-items: center;
+  }
+
+  .inbox-layout {
+    display: grid;
+    grid-template-columns: minmax(16rem, 22rem) 1fr;
+    gap: var(--space-4);
+    min-height: 28rem;
+  }
+
+  .thread-list {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    max-height: 70vh;
+  }
+
+  .thread-list ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .thread-list a {
+    display: block;
+    padding: var(--space-3);
+    text-decoration: none;
+    color: inherit;
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .thread-list a:hover,
+  .thread-list a.is-active {
+    background: var(--color-surface-subtle);
+  }
+
+  .thread-pane {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  .thread-pane__header {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    align-items: start;
+    margin-bottom: var(--space-4);
+  }
+
+  .thread-pane__header h2 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-lg);
+  }
+
+  .message-log {
+    display: grid;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .bubble {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-subtle);
+  }
+
+  .bubble.out {
+    background: #e8f7ff;
+  }
+
+  .bubble p {
+    margin: var(--space-2) 0 0;
+    white-space: pre-wrap;
   }
 
   .email-list {
     list-style: none;
     padding: 0;
-    margin: var(--space-4) 0 0;
+    margin: 0 0 var(--space-6);
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
 
-  .email-list a,
-  .email-list__static {
+  .email-list__static,
+  .email-list a {
     display: block;
-    text-decoration: none;
-    color: inherit;
     padding: var(--space-3);
     border: 1px solid var(--color-surface-subtle);
     border-radius: var(--radius-md);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .email-list a:hover {
+    border-color: var(--color-highlight);
   }
 
   .email-list__row {
     display: flex;
-    gap: var(--space-2);
     justify-content: space-between;
-    align-items: baseline;
+    gap: var(--space-2);
+    align-items: center;
   }
 
   .status-pill {
     font-size: var(--text-xs);
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-blue);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-green) 18%, white);
   }
 
   .status-pill.closed {
+    background: var(--color-surface-subtle);
     color: var(--color-muted);
   }
 
@@ -195,18 +426,71 @@ const live = emailConfigured();
     font-size: var(--text-sm);
   }
 
-  select,
-  input[type="search"] {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--color-surface-subtle);
-    width: 100%;
+  .preview {
+    margin-top: 0.15rem;
   }
 
-  @media (max-width: 700px) {
+  .note {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+
+  .campaigns-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    align-items: start;
+    margin-bottom: var(--space-4);
+  }
+
+  .stack {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  @media (max-width: 900px) {
+    .inbox-layout,
     .email-filters {
       grid-template-columns: 1fr;
     }
   }
 </style>
+
+<script>
+  const replyForm = document.querySelector<HTMLFormElement>("#reply-form");
+  const replyStatus = document.querySelector<HTMLParagraphElement>("#reply-status");
+  if (replyForm && replyStatus) {
+    replyForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      replyStatus.textContent = "Sending…";
+      const fields = new FormData(replyForm);
+      const res = await fetch("/api/email/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: Number(replyForm.dataset.thread),
+          body: fields.get("body"),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        location.reload();
+        return;
+      }
+      replyStatus.textContent = data.error ?? "Something went wrong.";
+    });
+  }
+
+  const toggle = document.querySelector<HTMLButtonElement>("#toggle-status");
+  toggle?.addEventListener("click", async () => {
+    const threadId = Number(toggle.dataset.thread);
+    const current = toggle.dataset.status;
+    const next = current === "open" ? "closed" : "open";
+    const res = await fetch("/api/email/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, status: next }),
+    });
+    if (res.ok) location.reload();
+  });
+</script>

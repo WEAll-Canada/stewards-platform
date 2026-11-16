@@ -1,0 +1,131 @@
+---
+import Base from "../../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../../lib/auth";
+import { getCampaign, listCampaignRecipients } from "../../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin") && !hasRole(user, "circle_lead")) {
+  return Astro.redirect("/stewards/dashboard");
+}
+
+const id = Number(Astro.params.id);
+const campaign = await getCampaign(id);
+if (!campaign) return Astro.redirect("/stewards/email?tab=campaigns");
+if (campaign.status === "draft") return Astro.redirect(`/stewards/email/campaigns?draft=${campaign.id}`);
+
+const recipients = await listCampaignRecipients(campaign.id);
+let stats: Record<string, number> = {};
+try {
+  stats = JSON.parse(campaign.stats_json || "{}");
+} catch {
+  stats = {};
+}
+---
+<Base title={campaign.name} active="email" user={user}>
+  <p><a href="/stewards/email?tab=campaigns">← Campaigns</a></p>
+  <h1>{campaign.name}</h1>
+  <p class="lede">{campaign.subject}</p>
+
+  <dl class="meta-grid">
+    <div><dt>Status</dt><dd>{campaign.status}</dd></div>
+    <div><dt>Type</dt><dd>{campaign.campaign_type}</dd></div>
+    <div><dt>Segment</dt><dd>{campaign.segment}</dd></div>
+    <div><dt>Recipients</dt><dd>{campaign.recipient_count}</dd></div>
+    <div><dt>Sent</dt><dd>{campaign.sent_at?.slice(0, 16).replace("T", " ") ?? "—"}</dd></div>
+  </dl>
+
+  <h2>Analytics</h2>
+  <ul class="stats">
+    <li><strong>{stats.sent ?? campaign.recipient_count}</strong> sent</li>
+    <li><strong>{stats.delivered ?? 0}</strong> delivered</li>
+    <li><strong>{stats.opened ?? 0}</strong> opened</li>
+    <li><strong>{stats.clicked ?? 0}</strong> clicked</li>
+    <li><strong>{stats.bounced ?? 0}</strong> bounced</li>
+  </ul>
+  <p class="note">Open/click/bounce counts fill in when the email provider webhook is connected.</p>
+
+  <h2>Body</h2>
+  <div class="body-preview" set:html={campaign.body_html || `<pre>${campaign.body_text}</pre>`} />
+
+  <h2>Recipients</h2>
+  {recipients.length === 0 ? (
+    <p class="note">No recipient rows stored.</p>
+  ) : (
+    <ul class="recipient-list">
+      {recipients.map((r) => (
+        <li>
+          <strong>{r.display_name}</strong>
+          <span class="meta">{r.email} · {r.status}</span>
+        </li>
+      ))}
+    </ul>
+  )}
+</Base>
+
+<style>
+  .lede {
+    color: var(--color-ink-soft);
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-4) 0 var(--space-6);
+  }
+
+  .meta-grid dt {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .meta-grid dd {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .stats {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .stats li {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .body-preview {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    margin-bottom: var(--space-6);
+    background: var(--color-surface);
+  }
+
+  .recipient-list {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .recipient-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .meta,
+  .note {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+  }
+</style>

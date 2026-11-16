@@ -29,6 +29,8 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Directory uses a steward card grid with Share connection and an email-icon message control. (tests/stewards-platform.spec.ts)
 - [auto] Messages show the other person once, with photo thumbnails. (tests/stewards-platform.spec.ts)
 - [auto] Any active steward can ask an FAQ with an optional answer; blank answers are flagged for admins. (tests/stewards-platform.spec.ts)
-- [auto] Alliance email has Inbox and Campaigns tabs, sample threads, and inbox search. (tests/stewards-platform.spec.ts)
+- [auto] Alliance email has Profile-style Inbox/Campaigns tabs, split inbox, templates/audience composer, drafts, and simulated send. (tests/stewards-platform.spec.ts)
+
 - [auto] Account menu Edit profile includes a person icon. (tests/stewards-platform.spec.ts)
 - [auto] Interest matching (“Who is interested?”) returns topic matches; network map page embeds graph data. (tests/stewards-platform.spec.ts)
+- [auto] Admin analytics shows range controls, steward/network metrics, and blocks non-admins. (tests/stewards-platform.spec.ts)

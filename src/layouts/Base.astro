@@ -1,6 +1,6 @@
 ---
 import type { StewardUser } from "../lib/db";
-import { listUserCircles } from "../lib/db";
+import { listUserCircles, recordPageView } from "../lib/db";
 import "../styles/tokens.css";
 import SiteHeader from "../components/SiteHeader.astro";
 
@@ -15,6 +15,15 @@ const { title, active, showHeader = true, user = null } = Astro.props;
 const fullTitle = title.includes("WeAll") ? title : `${title} · WeAll Canada Stewards`;
 const userCircles =
   user?.status === "active" ? await listUserCircles(user.id) : [];
+
+// Festival-style page views: steward routes only; admin traffic excluded inside recordPageView.
+if (user?.status === "active") {
+  try {
+    await recordPageView(Astro.url.pathname, user.id);
+  } catch {
+    // Analytics must never break the page (e.g. before migration applied).
+  }
+}
 ---
 <!doctype html>
 <html lang="en">

@@ -1,78 +1,428 @@
 ---
 import Base from "../../../layouts/Base.astro";
 import { currentUser, hasRole } from "../../../lib/auth";
-import { listActiveStewardEmails } from "../../../lib/db";
+import {
+  getCampaign,
+  listCircles,
+  listEmailTemplates,
+  listSegmentRecipients,
+} from "../../../lib/db";
 import { emailConfigured } from "../../../lib/email";
+import { HEADER_VARIANTS, MERGE_VARS, parseSegment } from "../../../lib/email-segments";
+import { INTERESTS } from "../../../lib/survey";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
-if (!hasRole(user, "admin")) return Astro.redirect("/stewards/email");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/email?tab=campaigns");
 
-const recipientCount = (await listActiveStewardEmails()).length;
+const draftId = Number(Astro.url.searchParams.get("draft") || 0);
+const draft = Number.isFinite(draftId) && draftId > 0 ? await getCampaign(draftId) : null;
+if (draft && draft.status !== "draft") {
+  return Astro.redirect(`/stewards/email/campaigns/${draft.id}`);
+}
+
+const templates = await listEmailTemplates();
+const circles = await listCircles();
 const live = emailConfigured();
+const segment = parseSegment(draft?.segment ?? "all_opted_in");
+const initialCount = (await listSegmentRecipients(segment)).length;
 ---
-<Base title="New campaign" active="email" user={user}>
+<Base title={draft ? "Edit draft" : "New campaign"} active="email" user={user}>
   <p><a href="/stewards/email?tab=campaigns">← Campaigns</a></p>
-  <h1>New campaign</h1>
+  <h1>{draft ? "Edit draft" : "New campaign"}</h1>
   <p class="lede">
-    Sends to active stewards who opted into email updates.
-    {live ? "Live provider connected." : "No provider key — this will simulate locally."}
+    Compose with templates, audience filters, HTML preview, test send, and confirm-before-send.
+    {live ? "Live provider connected." : "No provider key — sends simulate locally."}
   </p>
 
-  <form id="campaign-form" class="stack" style="max-width: 36rem;">
-    <label>
-      Internal name
-      <input name="name" required maxlength="120" placeholder="March update" />
-    </label>
-    <label>
-      Subject
-      <input name="subject" required maxlength="200" />
-    </label>
-    <label>
-      Body
-      <textarea name="body" rows="8" required></textarea>
-    </label>
-    <label>
-      Type the recipient count to confirm (<span id="hint-count">{recipientCount}</span>)
-      <input name="confirmCount" type="number" required value={recipientCount} />
-    </label>
-    <button class="btn btn--primary" type="submit">Send campaign</button>
-    <p id="campaign-status" role="status">{recipientCount} opted-in recipients right now.</p>
+  <form id="campaign-form" class="composer" data-draft={draft?.id ?? ""}>
+    <div class="composer__main">
+      <label>
+        Internal name
+        <input name="name" required maxlength="120" value={draft?.name ?? ""} placeholder="March update" />
+      </label>
+      <label>
+        Subject
+        <input name="subject" required maxlength="200" value={draft?.subject ?? ""} />
+      </label>
+
+      <label>
+        Load template
+        <select id="template-select">
+          <option value="">Choose a template…</option>
+          {templates.map((t) => (
+            <option
+              value={t.id}
+              data-subject={t.subject}
+              data-body={t.body_html}
+              data-header={t.header_variant}
+            >
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div class="merge-row">
+        <span class="hint">Insert merge field</span>
+        {MERGE_VARS.map((v) => (
+          <button type="button" class="btn btn--quiet merge-btn" data-token={v.key}>{v.label}</button>
+        ))}
+      </div>
+
+      <label>
+        Body (HTML)
+        <textarea id="body-html" name="bodyHtml" rows="12" required>{draft?.body_html || draft?.body_text || "<p>Hi {{display_name}},</p><p></p>"}</textarea>
+      </label>
+
+      <div class="toolbar">
+        <button type="button" class="btn btn--quiet" data-wrap="<strong>" data-wrap-end="</strong>">Bold</button>
+        <button type="button" class="btn btn--quiet" data-wrap="<em>" data-wrap-end="</em>">Italic</button>
+        <button type="button" class="btn btn--quiet" data-wrap="<p>" data-wrap-end="</p>">Paragraph</button>
+        <button type="button" class="btn btn--quiet" id="insert-link">Link</button>
+      </div>
+    </div>
+
+    <aside class="composer__side">
+      <fieldset>
+        <legend>Audience</legend>
+        <label>
+          Segment
+          <select name="segmentKind" id="segment-kind">
+            <option value="all_opted_in" selected={segment.kind === "all_opted_in"}>All opted-in stewards</option>
+            <option value="circle" selected={segment.kind === "circle"}>Circle members</option>
+            <option value="role" selected={segment.kind === "role"}>By role</option>
+            <option value="interest" selected={segment.kind === "interest"}>By interest</option>
+          </select>
+        </label>
+        <label id="segment-circle-wrap" hidden={segment.kind !== "circle"}>
+          Circle
+          <select name="circleId" id="segment-circle">
+            {circles.map((c) => (
+              <option value={c.id} selected={segment.kind === "circle" && segment.value === String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label id="segment-role-wrap" hidden={segment.kind !== "role"}>
+          Role
+          <select name="roleName" id="segment-role">
+            <option value="admin" selected={segment.value === "admin"}>Platform admins</option>
+            <option value="circle_lead" selected={segment.value === "circle_lead"}>Circle leads</option>
+            <option value="steward" selected={segment.value === "steward"}>Stewards</option>
+          </select>
+        </label>
+        <label id="segment-interest-wrap" hidden={segment.kind !== "interest"}>
+          Interest
+          <select name="interest" id="segment-interest">
+            {INTERESTS.filter((i) => i !== "Other").map((i) => (
+              <option value={i} selected={segment.value === i}>{i}</option>
+            ))}
+          </select>
+        </label>
+        <p class="meta" id="audience-count">{initialCount} people match this audience.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Send options</legend>
+        <label>
+          Type
+          <select name="campaignType">
+            <option value="marketing" selected={(draft?.campaign_type ?? "marketing") === "marketing"}>Marketing</option>
+            <option value="transactional" selected={draft?.campaign_type === "transactional"}>Transactional</option>
+          </select>
+        </label>
+        <label>
+          Header style
+          <select name="headerVariant">
+            {HEADER_VARIANTS.map((h) => (
+              <option value={h.value} selected={(draft?.header_variant ?? "weall_banner") === h.value}>
+                {h.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Type the recipient count to confirm send
+          <input name="confirmCount" type="number" required value={initialCount} />
+        </label>
+      </fieldset>
+
+      <div class="actions">
+        <button class="btn btn--quiet" type="button" data-action="draft">Save draft</button>
+        <button class="btn btn--quiet" type="button" data-action="preview">HTML preview</button>
+        <button class="btn btn--quiet" type="button" data-action="test">Send test to me</button>
+        <button class="btn btn--primary" type="button" data-action="send">Send campaign</button>
+      </div>
+      <p id="campaign-status" role="status"></p>
+    </aside>
   </form>
+
+  <dialog id="preview-dialog">
+    <form method="dialog" class="preview-shell">
+      <header>
+        <strong>HTML preview</strong>
+        <button class="btn btn--quiet" value="close">Close</button>
+      </header>
+      <iframe id="preview-frame" title="Email preview"></iframe>
+    </form>
+  </dialog>
 </Base>
 
+<style>
+  .lede {
+    color: var(--color-ink-soft);
+    max-width: 40rem;
+  }
+
+  .composer {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 22rem);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .composer__main,
+  .composer__side {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  label {
+    display: grid;
+    gap: var(--space-2);
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  fieldset {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  legend {
+    font-weight: 700;
+    padding: 0 var(--space-2);
+  }
+
+  .merge-row,
+  .toolbar,
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .hint,
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    font-weight: 400;
+  }
+
+  #preview-dialog {
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    padding: 0;
+    width: min(52rem, 94vw);
+  }
+
+  .preview-shell {
+    margin: 0;
+  }
+
+  .preview-shell header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  #preview-frame {
+    width: 100%;
+    height: min(70vh, 36rem);
+    border: 0;
+    background: white;
+  }
+
+  @media (max-width: 900px) {
+    .composer {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
 
 <script>
   const form = document.querySelector<HTMLFormElement>("#campaign-form")!;
   const status = document.querySelector<HTMLParagraphElement>("#campaign-status")!;
-  const hint = document.querySelector<HTMLElement>("#hint-count")!;
+  const bodyEl = document.querySelector<HTMLTextAreaElement>("#body-html")!;
+  const countEl = document.querySelector<HTMLParagraphElement>("#audience-count")!;
+  const confirmEl = form.querySelector<HTMLInputElement>('input[name="confirmCount"]')!;
+  const kindEl = document.querySelector<HTMLSelectElement>("#segment-kind")!;
+  const previewDialog = document.querySelector<HTMLDialogElement>("#preview-dialog")!;
+  const previewFrame = document.querySelector<HTMLIFrameElement>("#preview-frame")!;
 
-  // First dry call to learn exact opt-in count when confirm mismatches.
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    status.textContent = "Sending…";
+  function segmentPayload() {
+    const kind = kindEl.value;
+    let value = "";
+    if (kind === "circle") value = (document.querySelector<HTMLSelectElement>("#segment-circle")?.value ?? "");
+    if (kind === "role") value = (document.querySelector<HTMLSelectElement>("#segment-role")?.value ?? "");
+    if (kind === "interest") value = (document.querySelector<HTMLSelectElement>("#segment-interest")?.value ?? "");
+    return { kind, value };
+  }
+
+  function syncSegmentVisibility() {
+    const kind = kindEl.value;
+    document.querySelector<HTMLElement>("#segment-circle-wrap")!.hidden = kind !== "circle";
+    document.querySelector<HTMLElement>("#segment-role-wrap")!.hidden = kind !== "role";
+    document.querySelector<HTMLElement>("#segment-interest-wrap")!.hidden = kind !== "interest";
+  }
+
+  async function refreshCount() {
     const fields = new FormData(form);
-    const payload = {
-      name: fields.get("name"),
-      subject: fields.get("subject"),
-      body: fields.get("body"),
-      confirmCount: Number(fields.get("confirmCount")),
-    };
     const res = await fetch("/api/email/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        action: "count",
+        name: fields.get("name") || "count",
+        subject: fields.get("subject") || "count",
+        bodyHtml: bodyEl.value || "<p>x</p>",
+        segmentKind: segmentPayload().kind,
+        segmentValue: segmentPayload().value,
+      }),
     });
     const data = await res.json();
     if (res.ok) {
-      status.textContent = `Campaign ${data.mode} to ${data.recipientCount} people.`;
-      location.href = "/stewards/email";
-      return;
+      countEl.textContent = `${data.recipientCount} people match this audience.`;
+      confirmEl.value = String(data.recipientCount);
     }
-    if (data.recipientCount != null) {
-      hint.textContent = String(data.recipientCount);
-      (form.elements.namedItem("confirmCount") as HTMLInputElement).value = String(data.recipientCount);
-    }
-    status.textContent = data.error ?? "Something went wrong.";
+  }
+
+  function payload(action: string) {
+    const fields = new FormData(form);
+    const segment = segmentPayload();
+    return {
+      action,
+      draftId: form.dataset.draft ? Number(form.dataset.draft) : undefined,
+      name: fields.get("name"),
+      subject: fields.get("subject"),
+      bodyHtml: bodyEl.value,
+      campaignType: fields.get("campaignType"),
+      headerVariant: fields.get("headerVariant"),
+      segmentKind: segment.kind,
+      segmentValue: segment.value,
+      confirmCount: Number(fields.get("confirmCount")),
+    };
+  }
+
+  kindEl.addEventListener("change", () => {
+    syncSegmentVisibility();
+    void refreshCount();
   });
+  form.querySelectorAll("#segment-circle, #segment-role, #segment-interest").forEach((el) => {
+    el.addEventListener("change", () => void refreshCount());
+  });
+
+  document.querySelector<HTMLSelectElement>("#template-select")?.addEventListener("change", (event) => {
+    const select = event.target as HTMLSelectElement;
+    const option = select.selectedOptions[0];
+    if (!option?.value) return;
+    (form.elements.namedItem("subject") as HTMLInputElement).value = option.dataset.subject ?? "";
+    bodyEl.value = option.dataset.body ?? "";
+    const header = form.elements.namedItem("headerVariant") as HTMLSelectElement;
+    if (option.dataset.header) header.value = option.dataset.header;
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".merge-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const token = btn.dataset.token ?? "";
+      const start = bodyEl.selectionStart ?? bodyEl.value.length;
+      const end = bodyEl.selectionEnd ?? start;
+      bodyEl.value = bodyEl.value.slice(0, start) + token + bodyEl.value.slice(end);
+      bodyEl.focus();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-wrap]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const start = bodyEl.selectionStart ?? 0;
+      const end = bodyEl.selectionEnd ?? 0;
+      const selected = bodyEl.value.slice(start, end) || "text";
+      const open = btn.dataset.wrap ?? "";
+      const close = btn.dataset.wrapEnd ?? "";
+      bodyEl.value = bodyEl.value.slice(0, start) + open + selected + close + bodyEl.value.slice(end);
+      bodyEl.focus();
+    });
+  });
+
+  document.querySelector("#insert-link")?.addEventListener("click", () => {
+    const href = prompt("Link URL", "https://");
+    if (!href) return;
+    const start = bodyEl.selectionStart ?? 0;
+    const end = bodyEl.selectionEnd ?? 0;
+    const selected = bodyEl.value.slice(start, end) || "link text";
+    const html = `<a href="${href}">${selected}</a>`;
+    bodyEl.value = bodyEl.value.slice(0, start) + html + bodyEl.value.slice(end);
+  });
+
+  form.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.dataset.action!;
+      if (action === "send") {
+        const n = Number(confirmEl.value);
+        if (!window.confirm(`Are you sure you want to email ${n} people?`)) return;
+      }
+      status.textContent =
+        action === "send" ? "Sending…" : action === "draft" ? "Saving draft…" : "Working…";
+      const res = await fetch("/api/email/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload(action)),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.recipientCount != null) {
+          confirmEl.value = String(data.recipientCount);
+          countEl.textContent = `${data.recipientCount} people match this audience.`;
+        }
+        status.textContent = data.error ?? "Something went wrong.";
+        return;
+      }
+      if (action === "preview") {
+        previewFrame.srcdoc = data.html;
+        previewDialog.showModal();
+        status.textContent = `Preview for ${data.sampleName} · ${data.recipientCount} recipients.`;
+        return;
+      }
+      if (action === "draft") {
+        form.dataset.draft = String(data.id);
+        status.textContent = "Draft saved.";
+        return;
+      }
+      if (action === "test") {
+        status.textContent = `Test ${data.mode} to your inbox.`;
+        return;
+      }
+      status.textContent = `Campaign ${data.mode} to ${data.recipientCount} people.`;
+      location.href = "/stewards/email?tab=campaigns";
+    });
+  });
+
+  syncSegmentVisibility();
 </script>

@@ -1,0 +1,50 @@
+---
+interface Props {
+  active: "approvals" | "analytics";
+}
+const { active } = Astro.props;
+---
+<nav class="tabs" role="tablist" aria-label="Admin sections">
+  <a
+    class:list={["tabs__tab", { "is-active": active === "approvals" }]}
+    href="/stewards/admin"
+    role="tab"
+    aria-selected={active === "approvals"}
+    id="tab-approvals"
+  >
+    Approvals
+  </a>
+  <a
+    class:list={["tabs__tab", { "is-active": active === "analytics" }]}
+    href="/stewards/admin/analytics"
+    role="tab"
+    aria-selected={active === "analytics"}
+    id="tab-analytics"
+  >
+    Analytics
+  </a>
+</nav>
+
+<style>
+  .tabs {
+    display: flex;
+    gap: var(--space-2);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    margin: var(--space-6) 0;
+  }
+
+  .tabs__tab {
+    text-decoration: none;
+    color: var(--color-muted);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+
+  .tabs__tab.is-active {
+    color: var(--color-ink);
+    border-bottom-color: var(--color-cyan);
+  }
+</style>

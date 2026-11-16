@@ -840,22 +840,30 @@ export type EmailThreadFilters = {
   status?: string;
 };
 
-export async function listEmailThreads(filters: EmailThreadFilters = {}): Promise<
-  { id: number; subject: string; status: string; last_message_at: string; preview: string }[]
-> {
+export type EmailThreadRow = {
+  id: number;
+  subject: string;
+  status: string;
+  last_message_at: string;
+  preview: string;
+  from_addr: string;
+  last_admin_name: string;
+};
+
+export async function listEmailThreads(filters: EmailThreadFilters = {}): Promise<EmailThreadRow[]> {
   const clauses: string[] = ["1=1"];
   const binds: string[] = [];
   const q = filters.q?.trim();
   if (q) {
     clauses.push(
-      `(t.subject LIKE ? OR EXISTS (
+      `(t.subject LIKE ? OR t.from_addr LIKE ? OR EXISTS (
          SELECT 1 FROM email_messages m
          WHERE m.thread_id = t.id
            AND (m.body_text LIKE ? OR m.from_addr LIKE ? OR m.to_addrs LIKE ?)
        ))`,
     );
     const like = `%${q}%`;
-    binds.push(like, like, like, like);
+    binds.push(like, like, like, like, like);
   }
   const status = filters.status?.trim();
   if (status === "open" || status === "closed") {
@@ -864,7 +872,7 @@ export async function listEmailThreads(filters: EmailThreadFilters = {}): Promis
   }
 
   const stmt = env.DB.prepare(
-    `SELECT t.id, t.subject, t.status, t.last_message_at,
+    `SELECT t.id, t.subject, t.status, t.last_message_at, t.from_addr, t.last_admin_name,
             COALESCE((
               SELECT m.body_text FROM email_messages m
               WHERE m.thread_id = t.id
@@ -875,25 +883,19 @@ export async function listEmailThreads(filters: EmailThreadFilters = {}): Promis
      ORDER BY t.last_message_at DESC`,
   );
   const { results } = binds.length
-    ? await stmt.bind(...binds).all<{
-        id: number;
-        subject: string;
-        status: string;
-        last_message_at: string;
-        preview: string;
-      }>()
-    : await stmt.all<{
-        id: number;
-        subject: string;
-        status: string;
-        last_message_at: string;
-        preview: string;
-      }>();
+    ? await stmt.bind(...binds).all<EmailThreadRow>()
+    : await stmt.all<EmailThreadRow>();
   return results;
 }
 
 export async function getEmailThread(threadId: number): Promise<{
-  thread: { id: number; subject: string; status: string } | null;
+  thread: {
+    id: number;
+    subject: string;
+    status: string;
+    from_addr: string;
+    last_admin_name: string;
+  } | null;
   messages: {
     id: number;
     direction: string;
@@ -901,16 +903,29 @@ export async function getEmailThread(threadId: number): Promise<{
     to_addrs: string;
     body_text: string;
     created_at: string;
+    admin_name: string;
   }[];
 }> {
-  const thread = await env.DB.prepare(`SELECT id, subject, status FROM email_threads WHERE id = ?`)
+  const thread = await env.DB.prepare(
+    `SELECT id, subject, status, from_addr, last_admin_name FROM email_threads WHERE id = ?`,
+  )
     .bind(threadId)
-    .first<{ id: number; subject: string; status: string }>();
+    .first<{
+      id: number;
+      subject: string;
+      status: string;
+      from_addr: string;
+      last_admin_name: string;
+    }>();
   if (!thread) return { thread: null, messages: [] };
   const { results } = await env.DB.prepare(
-    `SELECT id, direction, from_addr, to_addrs, body_text, created_at
-     FROM email_messages WHERE thread_id = ?
-     ORDER BY created_at ASC, id ASC`,
+    `SELECT m.id, m.direction, m.from_addr, m.to_addrs, m.body_text, m.created_at,
+            COALESCE(p.display_name, u.email, '') AS admin_name
+     FROM email_messages m
+     LEFT JOIN users u ON u.id = m.admin_user_id
+     LEFT JOIN profiles p ON p.user_id = m.admin_user_id
+     WHERE m.thread_id = ?
+     ORDER BY m.created_at ASC, m.id ASC`,
   )
     .bind(threadId)
     .all<{
@@ -920,8 +935,19 @@ export async function getEmailThread(threadId: number): Promise<{
       to_addrs: string;
       body_text: string;
       created_at: string;
+      admin_name: string;
     }>();
   return { thread, messages: results };
+}
+
+export async function setEmailThreadStatus(
+  threadId: number,
+  status: "open" | "closed",
+): Promise<boolean> {
+  const result = await env.DB.prepare(`UPDATE email_threads SET status = ? WHERE id = ?`)
+    .bind(status, threadId)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function getEmailReplyTarget(
@@ -948,6 +974,7 @@ export async function saveOutboundEmail(input: {
   to: string;
   body: string;
   providerId?: string | null;
+  adminName?: string;
 }): Promise<void> {
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await env.DB.prepare(
@@ -963,8 +990,12 @@ export async function saveOutboundEmail(input: {
       now,
     )
     .run();
-  await env.DB.prepare(`UPDATE email_threads SET last_message_at = ? WHERE id = ?`)
-    .bind(now, input.threadId)
+  await env.DB.prepare(
+    `UPDATE email_threads
+     SET last_message_at = ?, last_admin_name = COALESCE(?, last_admin_name)
+     WHERE id = ?`,
+  )
+    .bind(now, input.adminName ?? "", input.threadId)
     .run();
 }
 
@@ -973,68 +1004,241 @@ export async function countActiveStewards(): Promise<number> {
   return row?.n ?? 0;
 }
 
-export async function listActiveStewardEmails(): Promise<{ id: number; email: string }[]> {
-  const { results } = await env.DB.prepare(
-    `SELECT u.id, u.email
-     FROM users u
-     JOIN preferences p ON p.user_id = u.id
-     WHERE u.status = 'active' AND p.email_updates = 1`,
-  ).all<{ id: number; email: string }>();
+export type CampaignRecipient = {
+  id: number;
+  email: string;
+  display_name: string;
+};
+
+export async function listActiveStewardEmails(): Promise<CampaignRecipient[]> {
+  return listSegmentRecipients({ kind: "all_opted_in" });
+}
+
+export async function listSegmentRecipients(segment: {
+  kind: string;
+  value?: string;
+}): Promise<CampaignRecipient[]> {
+  const base = `
+    SELECT u.id, u.email, COALESCE(p.display_name, u.email) AS display_name
+    FROM users u
+    JOIN preferences pref ON pref.user_id = u.id
+    LEFT JOIN profiles p ON p.user_id = u.id
+    WHERE u.status = 'active' AND pref.email_updates = 1`;
+
+  if (segment.kind === "circle" && segment.value) {
+    const { results } = await env.DB.prepare(
+      `${base}
+       AND EXISTS (
+         SELECT 1 FROM circle_members cm
+         WHERE cm.user_id = u.id AND cm.circle_id = ?
+       )
+       ORDER BY display_name COLLATE NOCASE`,
+    )
+      .bind(Number(segment.value))
+      .all<CampaignRecipient>();
+    return results;
+  }
+
+  if (segment.kind === "role" && segment.value) {
+    const { results } = await env.DB.prepare(
+      `${base}
+       AND EXISTS (
+         SELECT 1 FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id = u.id AND r.name = ?
+       )
+       ORDER BY display_name COLLATE NOCASE`,
+    )
+      .bind(segment.value)
+      .all<CampaignRecipient>();
+    return results;
+  }
+
+  if (segment.kind === "interest" && segment.value) {
+    const { results } = await env.DB.prepare(
+      `${base}
+       AND ('|' || COALESCE(p.interests, '') || '|') LIKE ?
+       ORDER BY display_name COLLATE NOCASE`,
+    )
+      .bind(`%|${segment.value}|%`)
+      .all<CampaignRecipient>();
+    return results;
+  }
+
+  const { results } = await env.DB.prepare(`${base} ORDER BY display_name COLLATE NOCASE`).all<CampaignRecipient>();
   return results;
 }
+
+export async function listEmailTemplates(): Promise<
+  { id: number; name: string; subject: string; body_html: string; header_variant: string }[]
+> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, subject, body_html, header_variant FROM email_templates ORDER BY name COLLATE NOCASE`,
+  ).all<{ id: number; name: string; subject: string; body_html: string; header_variant: string }>();
+  return results;
+}
+
+export async function getEmailTemplate(id: number) {
+  return env.DB.prepare(
+    `SELECT id, name, subject, body_html, header_variant FROM email_templates WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{ id: number; name: string; subject: string; body_html: string; header_variant: string }>();
+}
+
+export async function listCircles(): Promise<{ id: number; name: string; slug: string }[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, slug FROM circles WHERE status = 'active' ORDER BY name COLLATE NOCASE`,
+  ).all<{ id: number; name: string; slug: string }>();
+  return results;
+}
+
+export type CampaignRow = {
+  id: number;
+  name: string;
+  subject: string;
+  body_text: string;
+  body_html: string;
+  segment: string;
+  status: string;
+  campaign_type: string;
+  header_variant: string;
+  stats_json: string;
+  recipient_count: number;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export async function createCampaign(input: {
   name: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
+  segment?: string;
+  campaignType?: string;
+  headerVariant?: string;
   createdBy: number;
-  recipients: { id: number; email: string }[];
-  status: "sent" | "simulated";
+  recipients: CampaignRecipient[];
+  status: "draft" | "sent" | "simulated";
+  stats?: Record<string, number>;
 }): Promise<number> {
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const sentAt = input.status === "draft" ? null : now;
+  const stats = JSON.stringify(
+    input.stats ?? {
+      sent: input.status === "draft" ? 0 : input.recipients.length,
+      delivered: 0,
+      opened: 0,
+      clicked: 0,
+      bounced: 0,
+    },
+  );
   const campaign = await env.DB.prepare(
-    `INSERT INTO email_campaigns (name, subject, body_text, segment, status, created_by, recipient_count, sent_at)
-     VALUES (?, ?, ?, 'all_active', ?, ?, ?, ?)
+    `INSERT INTO email_campaigns
+      (name, subject, body_text, body_html, segment, status, campaign_type, header_variant, stats_json,
+       created_by, recipient_count, sent_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
     .bind(
       input.name,
       input.subject,
       input.body,
+      input.bodyHtml ?? "",
+      input.segment ?? "all_opted_in",
       input.status,
+      input.campaignType ?? "marketing",
+      input.headerVariant ?? "weall_banner",
+      stats,
       input.createdBy,
       input.recipients.length,
+      sentAt,
+      now,
       now,
     )
     .first<{ id: number }>();
   if (!campaign) throw new Error("Could not create campaign");
 
-  for (const r of input.recipients) {
-    await env.DB.prepare(
-      `INSERT INTO email_campaign_recipients (campaign_id, user_id, email, status)
-       VALUES (?, ?, ?, ?)`,
-    )
-      .bind(campaign.id, r.id, r.email, input.status === "sent" ? "sent" : "simulated")
-      .run();
+  if (input.status !== "draft") {
+    for (const r of input.recipients) {
+      await env.DB.prepare(
+        `INSERT INTO email_campaign_recipients (campaign_id, user_id, email, status)
+         VALUES (?, ?, ?, ?)`,
+      )
+        .bind(campaign.id, r.id, r.email, input.status === "sent" ? "sent" : "simulated")
+        .run();
+    }
   }
   return campaign.id;
 }
 
-export async function listCampaigns(): Promise<
-  { id: number; name: string; subject: string; status: string; recipient_count: number; sent_at: string | null }[]
-> {
-  const { results } = await env.DB.prepare(
-    `SELECT id, name, subject, status, recipient_count, sent_at
-     FROM email_campaigns
-     ORDER BY created_at DESC`,
-  ).all<{
-    id: number;
+export async function updateCampaignDraft(
+  id: number,
+  input: {
     name: string;
     subject: string;
-    status: string;
-    recipient_count: number;
-    sent_at: string | null;
-  }>();
+    body: string;
+    bodyHtml: string;
+    segment: string;
+    campaignType: string;
+    headerVariant: string;
+  },
+): Promise<boolean> {
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const result = await env.DB.prepare(
+    `UPDATE email_campaigns
+     SET name = ?, subject = ?, body_text = ?, body_html = ?, segment = ?,
+         campaign_type = ?, header_variant = ?, updated_at = ?
+     WHERE id = ? AND status = 'draft'`,
+  )
+    .bind(
+      input.name,
+      input.subject,
+      input.body,
+      input.bodyHtml,
+      input.segment,
+      input.campaignType,
+      input.headerVariant,
+      now,
+      id,
+    )
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+export async function getCampaign(id: number): Promise<CampaignRow | null> {
+  return env.DB.prepare(
+    `SELECT id, name, subject, body_text, body_html, segment, status, campaign_type, header_variant,
+            stats_json, recipient_count, sent_at, created_at, updated_at
+     FROM email_campaigns WHERE id = ?`,
+  )
+    .bind(id)
+    .first<CampaignRow>();
+}
+
+export async function listCampaigns(): Promise<CampaignRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, name, subject, body_text, body_html, segment, status, campaign_type, header_variant,
+            stats_json, recipient_count, sent_at, created_at, updated_at
+     FROM email_campaigns
+     ORDER BY updated_at DESC, created_at DESC`,
+  ).all<CampaignRow>();
+  return results;
+}
+
+export async function listCampaignRecipients(
+  campaignId: number,
+): Promise<{ email: string; status: string; display_name: string }[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT r.email, r.status, COALESCE(p.display_name, r.email) AS display_name
+     FROM email_campaign_recipients r
+     LEFT JOIN profiles p ON p.user_id = r.user_id
+     WHERE r.campaign_id = ?
+     ORDER BY display_name COLLATE NOCASE`,
+  )
+    .bind(campaignId)
+    .all<{ email: string; status: string; display_name: string }>();
   return results;
 }
 
@@ -1190,4 +1394,284 @@ export async function upsertFaq(input: {
   )
     .bind(input.question, input.answer, input.answer.trim() ? 100 : 40, input.userId, now)
     .run();
+}
+
+/** Record a steward page view (skip admin routes — Festival excludes admin traffic). */
+export async function recordPageView(path: string, userId: number | null): Promise<void> {
+  const clean = path.split("?")[0].slice(0, 200);
+  if (!clean.startsWith("/stewards")) return;
+  if (clean.startsWith("/stewards/admin")) return;
+  await env.DB.prepare(`INSERT INTO page_views (path, user_id) VALUES (?, ?)`).bind(clean, userId).run();
+}
+
+export type AnalyticsSnapshot = {
+  activeStewards: number;
+  pendingApplications: number;
+  directoryVisible: number;
+  openInboxThreads: number;
+  connectionsTotal: number;
+  circleMemberships: number;
+  campaignsSent: number;
+  eventsTotal: number;
+  pageViewsPeriod: number;
+  pageViewsToday: number;
+  newStewardsPeriod: number;
+  applicationsPeriod: number;
+  stewardMessagesPeriod: number;
+  emailRepliesPeriod: number;
+  rsvpsPeriod: number;
+  series: {
+    newStewards: { day: string; value: number }[];
+    pageViews: { day: string; value: number }[];
+    stewardMessages: { day: string; value: number }[];
+    applications: { day: string; value: number }[];
+  };
+  topPaths: { path: string; view_count: number }[];
+  circleSizes: { label: string; count: number }[];
+  interests: { label: string; count: number }[];
+  connectionStrengths: { label: string; count: number }[];
+  rsvpBuckets: { label: string; count: number }[];
+  rsvpStats: {
+    stewardCount: number;
+    withRsvp: number;
+    totalRsvps: number;
+    average: number;
+  };
+};
+
+async function daySeries(
+  sql: string,
+  startIso: string | null,
+): Promise<{ day: string; value: number }[]> {
+  const stmt = startIso
+    ? env.DB.prepare(sql.replace("/*RANGE*/", "AND created_at >= ?")).bind(startIso)
+    : env.DB.prepare(sql.replace("/*RANGE*/", ""));
+  const { results } = await stmt.all<{ day: string; value: number }>();
+  return results.map((r) => ({ day: String(r.day).slice(0, 10), value: Number(r.value) || 0 }));
+}
+
+export async function getAnalyticsSnapshot(startIso: string | null): Promise<AnalyticsSnapshot> {
+  const rangeClause = startIso ? "AND created_at >= ?" : "";
+
+  const activeStewards =
+    (
+      await env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE status = 'active'`).first<{ n: number }>()
+    )?.n ?? 0;
+  const pendingApplications =
+    (
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM applications WHERE status = 'pending'`,
+      ).first<{ n: number }>()
+    )?.n ?? 0;
+  const directoryVisible =
+    (
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n
+         FROM users u
+         JOIN preferences pref ON pref.user_id = u.id
+         JOIN profiles p ON p.user_id = u.id
+         WHERE u.status = 'active' AND pref.allow_directory = 1 AND p.visibility != 'private'`,
+      ).first<{ n: number }>()
+    )?.n ?? 0;
+  const openInboxThreads =
+    (
+      await env.DB.prepare(`SELECT COUNT(*) AS n FROM email_threads WHERE status = 'open'`).first<{
+        n: number;
+      }>()
+    )?.n ?? 0;
+  const connectionsTotal =
+    (await env.DB.prepare(`SELECT COUNT(*) AS n FROM connections`).first<{ n: number }>())?.n ?? 0;
+  const circleMemberships =
+    (await env.DB.prepare(`SELECT COUNT(*) AS n FROM circle_members`).first<{ n: number }>())?.n ?? 0;
+  const campaignsSent =
+    (
+      await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM email_campaigns WHERE status IN ('sent', 'simulated')`,
+      ).first<{ n: number }>()
+    )?.n ?? 0;
+  const eventsTotal =
+    (await env.DB.prepare(`SELECT COUNT(*) AS n FROM events`).first<{ n: number }>())?.n ?? 0;
+
+  const today = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+
+  const pageViewsPeriod = startIso
+    ? (
+        await env.DB.prepare(`SELECT COUNT(*) AS n FROM page_views WHERE created_at >= ?`)
+          .bind(startIso)
+          .first<{ n: number }>()
+      )?.n ?? 0
+    : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM page_views`).first<{ n: number }>())?.n ?? 0;
+
+  const pageViewsToday =
+    (
+      await env.DB.prepare(`SELECT COUNT(*) AS n FROM page_views WHERE created_at >= ?`)
+        .bind(today)
+        .first<{ n: number }>()
+    )?.n ?? 0;
+
+  const newStewardsPeriod = startIso
+    ? (
+        await env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM users WHERE status = 'active' AND created_at >= ?`,
+        )
+          .bind(startIso)
+          .first<{ n: number }>()
+      )?.n ?? 0
+    : activeStewards;
+
+  const applicationsPeriod = startIso
+    ? (
+        await env.DB.prepare(`SELECT COUNT(*) AS n FROM applications WHERE created_at >= ?`)
+          .bind(startIso)
+          .first<{ n: number }>()
+      )?.n ?? 0
+    : (await env.DB.prepare(`SELECT COUNT(*) AS n FROM applications`).first<{ n: number }>())?.n ?? 0;
+
+  const stewardMessagesPeriod = startIso
+    ? (
+        await env.DB.prepare(`SELECT COUNT(*) AS n FROM steward_messages WHERE created_at >= ?`)
+          .bind(startIso)
+          .first<{ n: number }>()
+      )?.n ?? 0
+    : (
+        await env.DB.prepare(`SELECT COUNT(*) AS n FROM steward_messages`).first<{ n: number }>()
+      )?.n ?? 0;
+
+  const emailRepliesPeriod = startIso
+    ? (
+        await env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM email_messages WHERE direction = 'outbound' AND created_at >= ?`,
+        )
+          .bind(startIso)
+          .first<{ n: number }>()
+      )?.n ?? 0
+    : (
+        await env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM email_messages WHERE direction = 'outbound'`,
+        ).first<{ n: number }>()
+      )?.n ?? 0;
+
+  const newStewards = await daySeries(
+    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS value
+     FROM users WHERE status = 'active' /*RANGE*/
+     GROUP BY day ORDER BY day`,
+    startIso,
+  );
+  const pageViews = await daySeries(
+    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS value
+     FROM page_views WHERE 1=1 /*RANGE*/
+     GROUP BY day ORDER BY day`,
+    startIso,
+  );
+  const stewardMessages = await daySeries(
+    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS value
+     FROM steward_messages WHERE 1=1 /*RANGE*/
+     GROUP BY day ORDER BY day`,
+    startIso,
+  );
+  const applications = await daySeries(
+    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS value
+     FROM applications WHERE 1=1 /*RANGE*/
+     GROUP BY day ORDER BY day`,
+    startIso,
+  );
+
+  const topPathStmt = startIso
+    ? env.DB.prepare(
+        `SELECT path, COUNT(*) AS view_count FROM page_views
+         WHERE created_at >= ? GROUP BY path ORDER BY view_count DESC LIMIT 10`,
+      ).bind(startIso)
+    : env.DB.prepare(
+        `SELECT path, COUNT(*) AS view_count FROM page_views
+         GROUP BY path ORDER BY view_count DESC LIMIT 10`,
+      );
+  const { results: topPaths } = await topPathStmt.all<{ path: string; view_count: number }>();
+
+  const { results: circleSizes } = await env.DB.prepare(
+    `SELECT c.name AS label, COUNT(cm.user_id) AS count
+     FROM circles c
+     LEFT JOIN circle_members cm ON cm.circle_id = c.id
+     WHERE c.status = 'active'
+     GROUP BY c.id
+     ORDER BY count DESC, c.name COLLATE NOCASE`,
+  ).all<{ label: string; count: number }>();
+
+  const { results: interestRows } = await env.DB.prepare(
+    `SELECT p.interests FROM users u
+     JOIN profiles p ON p.user_id = u.id
+     WHERE u.status = 'active' AND p.interests != ''`,
+  ).all<{ interests: string }>();
+  const interestMap = new Map<string, number>();
+  for (const row of interestRows) {
+    for (const part of (row.interests || "").split("|")) {
+      const label = part.trim();
+      if (!label) continue;
+      interestMap.set(label, (interestMap.get(label) ?? 0) + 1);
+    }
+  }
+  const interests = [...interestMap.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 12);
+
+  const { results: strengthRows } = await env.DB.prepare(
+    `SELECT strength AS label, COUNT(*) AS count FROM connections GROUP BY strength ORDER BY strength`,
+  ).all<{ label: number; count: number }>();
+  const connectionStrengths = strengthRows.map((r) => ({
+    label: `Strength ${r.label}`,
+    count: r.count,
+  }));
+
+  const { results: rsvpCounts } = await env.DB.prepare(
+    `SELECT u.id, COUNT(r.event_id) AS n
+     FROM users u
+     LEFT JOIN event_rsvps r ON r.user_id = u.id
+     WHERE u.status = 'active'
+     GROUP BY u.id`,
+  ).all<{ id: number; n: number }>();
+  const bucketsDef = [
+    { label: "0", min: 0, max: 0 },
+    { label: "1", min: 1, max: 1 },
+    { label: "2", min: 2, max: 2 },
+    { label: "3–4", min: 3, max: 4 },
+    { label: "5+", min: 5, max: 999 },
+  ];
+  const rsvpBuckets = bucketsDef.map((b) => ({
+    label: b.label,
+    count: rsvpCounts.filter((r) => r.n >= b.min && r.n <= b.max).length,
+  }));
+  const withRsvp = rsvpCounts.filter((r) => r.n > 0).length;
+  const totalRsvps = rsvpCounts.reduce((sum, r) => sum + r.n, 0);
+  const stewardCount = rsvpCounts.length || 1;
+  void rangeClause;
+
+  return {
+    activeStewards,
+    pendingApplications,
+    directoryVisible,
+    openInboxThreads,
+    connectionsTotal,
+    circleMemberships,
+    campaignsSent,
+    eventsTotal,
+    pageViewsPeriod,
+    pageViewsToday,
+    newStewardsPeriod,
+    applicationsPeriod,
+    stewardMessagesPeriod,
+    emailRepliesPeriod,
+    rsvpsPeriod: totalRsvps,
+    series: { newStewards, pageViews, stewardMessages, applications },
+    topPaths,
+    circleSizes,
+    interests,
+    connectionStrengths,
+    rsvpBuckets,
+    rsvpStats: {
+      stewardCount: rsvpCounts.length,
+      withRsvp,
+      totalRsvps,
+      average: totalRsvps / stewardCount,
+    },
+  };
 }
