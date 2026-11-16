@@ -49,6 +49,10 @@ for (const e of events) {
     <div>
       <h1>Events</h1>
       <p class="lede">What’s on now, what’s coming, and a month view for planning.</p>
+      <p class="subscribe">
+        <a class="btn btn--quiet" href="/api/events/calendar">Download calendar (.ics)</a>
+        <span class="meta">Subscribe in Google Calendar, Outlook, or Apple Calendar.</span>
+      </p>
     </div>
     <div class="view-toggle" role="tablist" aria-label="Events view">
       <button type="button" class="view-toggle__btn is-active" data-view="list" aria-selected="true">List</button>
@@ -69,12 +73,17 @@ for (const e of events) {
                 {formatEventWhen(e)}
                 {e.location && ` · ${e.location}`}
                 {e.circle_name && ` · ${e.circle_name}`}
-                {e.rsvp && ` · RSVP: ${e.rsvp}`}
+                {e.rsvp && ` · your RSVP: ${e.rsvp}`}
               </div>
+              <p class="attendance">
+                {e.going_count} going · {e.interested_count} interested · {e.maybe_count} maybe
+                {e.going_names.length > 0 && ` · ${e.going_names.join(", ")}`}
+              </p>
               {e.description && <p>{e.description}</p>}
               <div class="dir-actions">
                 <button class="btn btn--primary rsvp-btn" type="button" data-status="going">Going</button>
                 <button class="btn btn--accent rsvp-btn" type="button" data-status="interested">Interested</button>
+                <button class="btn btn--quiet rsvp-btn" type="button" data-status="maybe">Maybe</button>
                 <button class="btn btn--quiet rsvp-btn" type="button" data-status="cancelled">Cancel RSVP</button>
               </div>
             </li>
@@ -94,12 +103,17 @@ for (const e of events) {
                 {formatEventWhen(e)}
                 {e.location && ` · ${e.location}`}
                 {e.circle_name && ` · ${e.circle_name}`}
-                {e.rsvp && ` · RSVP: ${e.rsvp}`}
+                {e.rsvp && ` · your RSVP: ${e.rsvp}`}
               </div>
+              <p class="attendance">
+                {e.going_count} going · {e.interested_count} interested · {e.maybe_count} maybe
+                {e.going_names.length > 0 && ` · ${e.going_names.join(", ")}`}
+              </p>
               {e.description && <p>{e.description}</p>}
               <div class="dir-actions">
                 <button class="btn btn--primary rsvp-btn" type="button" data-status="going">Going</button>
                 <button class="btn btn--accent rsvp-btn" type="button" data-status="interested">Interested</button>
+                <button class="btn btn--quiet rsvp-btn" type="button" data-status="maybe">Maybe</button>
                 <button class="btn btn--quiet rsvp-btn" type="button" data-status="cancelled">Cancel RSVP</button>
               </div>
             </li>
@@ -121,12 +135,17 @@ for (const e of events) {
                 {formatEventWhen(e)}
                 {e.location && ` · ${e.location}`}
                 {e.circle_name && ` · ${e.circle_name}`}
-                {e.rsvp && ` · RSVP: ${e.rsvp}`}
+                {e.rsvp && ` · your RSVP: ${e.rsvp}`}
               </div>
+              <p class="attendance">
+                {e.going_count} going · {e.interested_count} interested · {e.maybe_count} maybe
+                {e.going_names.length > 0 && ` · ${e.going_names.join(", ")}`}
+              </p>
               {e.description && <p>{e.description}</p>}
               <div class="dir-actions">
                 <button class="btn btn--primary rsvp-btn" type="button" data-status="going">Going</button>
                 <button class="btn btn--accent rsvp-btn" type="button" data-status="interested">Interested</button>
+                <button class="btn btn--quiet rsvp-btn" type="button" data-status="maybe">Maybe</button>
                 <button class="btn btn--quiet rsvp-btn" type="button" data-status="cancelled">Cancel RSVP</button>
               </div>
             </li>
@@ -230,6 +249,20 @@ for (const e of events) {
     gap: var(--space-4);
     align-items: end;
     margin-bottom: var(--space-6);
+  }
+
+  .subscribe {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    margin: var(--space-3) 0 0;
+  }
+
+  .attendance {
+    margin: var(--space-2) 0;
+    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
   }
 
   .view-toggle {

@@ -1400,6 +1400,155 @@ export async function listCircleMembers(
   return results;
 }
 
+export type CircleResourceRow = {
+  id: number;
+  title: string;
+  url: string;
+  note: string;
+  created_at: string;
+  created_by_name: string;
+};
+
+export type CircleDecisionRow = {
+  id: number;
+  title: string;
+  detail: string;
+  decided_at: string;
+  created_by_name: string;
+};
+
+export async function listCircleResources(circleId: number): Promise<CircleResourceRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT cr.id, cr.title, cr.url, cr.note, cr.created_at,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS created_by_name
+     FROM circle_resources cr
+     JOIN users u ON u.id = cr.created_by
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE cr.circle_id = ?
+     ORDER BY cr.created_at DESC, cr.id DESC`,
+  )
+    .bind(circleId)
+    .all<CircleResourceRow>();
+  return results;
+}
+
+export async function addCircleResource(input: {
+  circleId: number;
+  title: string;
+  url: string;
+  note: string;
+  createdBy: number;
+}): Promise<number> {
+  const row = await env.DB.prepare(
+    `INSERT INTO circle_resources (circle_id, title, url, note, created_by)
+     VALUES (?, ?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(input.circleId, input.title, input.url, input.note, input.createdBy)
+    .first<{ id: number }>();
+  if (!row) throw new Error("Could not add resource");
+  return row.id;
+}
+
+export async function listCircleDecisions(circleId: number): Promise<CircleDecisionRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT cd.id, cd.title, cd.detail, cd.decided_at,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS created_by_name
+     FROM circle_decisions cd
+     JOIN users u ON u.id = cd.created_by
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE cd.circle_id = ?
+     ORDER BY cd.decided_at DESC, cd.id DESC`,
+  )
+    .bind(circleId)
+    .all<CircleDecisionRow>();
+  return results;
+}
+
+export async function addCircleDecision(input: {
+  circleId: number;
+  title: string;
+  detail: string;
+  decidedAt: string;
+  createdBy: number;
+}): Promise<number> {
+  const row = await env.DB.prepare(
+    `INSERT INTO circle_decisions (circle_id, title, detail, decided_at, created_by)
+     VALUES (?, ?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(input.circleId, input.title, input.detail, input.decidedAt, input.createdBy)
+    .first<{ id: number }>();
+  if (!row) throw new Error("Could not add decision");
+  return row.id;
+}
+
+export async function userIsCircleMember(circleId: number, userId: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok FROM circle_members WHERE circle_id = ? AND user_id = ?`,
+  )
+    .bind(circleId, userId)
+    .first<{ ok: number }>();
+  return !!row;
+}
+
+export type KnowledgeItemRow = {
+  id: number;
+  title: string;
+  summary: string;
+  url: string;
+  body_text: string;
+  tags: string;
+  created_at: string;
+  created_by_name: string;
+};
+
+export async function listKnowledgeItems(q = ""): Promise<KnowledgeItemRow[]> {
+  const query = q.trim().toLowerCase();
+  const like = `%${query}%`;
+  const { results } = await env.DB.prepare(
+    query
+      ? `SELECT k.id, k.title, k.summary, k.url, k.body_text, k.tags, k.created_at,
+                COALESCE(NULLIF(p.display_name, ''), u.email) AS created_by_name
+         FROM knowledge_items k
+         JOIN users u ON u.id = k.created_by
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE lower(k.title) LIKE ?
+            OR lower(k.summary) LIKE ?
+            OR lower(k.body_text) LIKE ?
+            OR lower(k.tags) LIKE ?
+         ORDER BY k.created_at DESC, k.id DESC`
+      : `SELECT k.id, k.title, k.summary, k.url, k.body_text, k.tags, k.created_at,
+                COALESCE(NULLIF(p.display_name, ''), u.email) AS created_by_name
+         FROM knowledge_items k
+         JOIN users u ON u.id = k.created_by
+         LEFT JOIN profiles p ON p.user_id = u.id
+         ORDER BY k.created_at DESC, k.id DESC`,
+  )
+    .bind(...(query ? [like, like, like, like] : []))
+    .all<KnowledgeItemRow>();
+  return results;
+}
+
+export async function addKnowledgeItem(input: {
+  title: string;
+  summary: string;
+  url: string;
+  bodyText: string;
+  tags: string;
+  createdBy: number;
+}): Promise<number> {
+  const row = await env.DB.prepare(
+    `INSERT INTO knowledge_items (title, summary, url, body_text, tags, created_by)
+     VALUES (?, ?, ?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(input.title, input.summary, input.url, input.bodyText, input.tags, input.createdBy)
+    .first<{ id: number }>();
+  if (!row) throw new Error("Could not add knowledge item");
+  return row.id;
+}
+
 export type EventRow = {
   id: number;
   title: string;
@@ -1410,12 +1559,19 @@ export type EventRow = {
   visibility: string;
   circle_name: string | null;
   rsvp: string | null;
+  going_count: number;
+  interested_count: number;
+  maybe_count: number;
+  going_names: string[];
 };
 
 export async function listEventsForUser(userId: number): Promise<EventRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT e.id, e.title, e.description, e.starts_at, e.ends_at, e.location, e.visibility,
-            c.name AS circle_name, r.status AS rsvp
+            c.name AS circle_name, r.status AS rsvp,
+            (SELECT COUNT(*) FROM event_rsvps g WHERE g.event_id = e.id AND g.status = 'going') AS going_count,
+            (SELECT COUNT(*) FROM event_rsvps i WHERE i.event_id = e.id AND i.status = 'interested') AS interested_count,
+            (SELECT COUNT(*) FROM event_rsvps m WHERE m.event_id = e.id AND m.status = 'maybe') AS maybe_count
      FROM events e
      LEFT JOIN circles c ON c.id = e.circle_id
      LEFT JOIN event_rsvps r ON r.event_id = e.id AND r.user_id = ?
@@ -1426,8 +1582,27 @@ export async function listEventsForUser(userId: number): Promise<EventRow[]> {
      ORDER BY e.starts_at ASC`,
   )
     .bind(userId, userId)
-    .all<EventRow>();
-  return results;
+    .all<Omit<EventRow, "going_names"> & { going_count: number; interested_count: number; maybe_count: number }>();
+
+  const events: EventRow[] = [];
+  for (const row of results) {
+    const { results: names } = await env.DB.prepare(
+      `SELECT COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name
+       FROM event_rsvps r
+       JOIN users u ON u.id = r.user_id
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE r.event_id = ? AND r.status = 'going'
+       ORDER BY display_name COLLATE NOCASE
+       LIMIT 12`,
+    )
+      .bind(row.id)
+      .all<{ display_name: string }>();
+    events.push({
+      ...row,
+      going_names: names.map((n) => n.display_name),
+    });
+  }
+  return events;
 }
 
 export async function createEvent(input: {
@@ -1463,7 +1638,7 @@ export async function createEvent(input: {
 export async function upsertRsvp(
   eventId: number,
   userId: number,
-  status: "going" | "interested" | "cancelled",
+  status: "going" | "interested" | "maybe" | "cancelled",
 ): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO event_rsvps (event_id, user_id, status)

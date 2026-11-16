@@ -59,6 +59,7 @@ const accountLabel = user?.display_name || user?.email || "Account";
           )}
         </div>
         <a href="/stewards/events" class:list={{ "is-active": active === "events" }}>Events</a>
+        <a href="/stewards/commons" class:list={{ "is-active": active === "commons" }}>Commons</a>
         <a href="/stewards/messages" class:list={{ "is-active": active === "messages" }}>Messages</a>
         <a href="/stewards/faq" class:list={{ "is-active": active === "faq" }}>FAQ</a>
         {canEmail && (

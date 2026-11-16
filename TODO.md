@@ -18,3 +18,4 @@ When an item is finished, check it off and add the date it was done:
 - [ ] Set SESSION_SECRET for staging and production (`wrangler secret put SESSION_SECRET --env staging` / `--env production`) (tech steward, 2026-11-11)
 - [ ] Add Google OAuth client IDs/secrets for steward login (tech steward, 2026-11-11)
 - [ ] Add Resend API key (and EMAIL_FROM) for live alliance email on staging/production (tech steward, 2026-11-11)
+- [ ] Add Cloudflare R2 (or similar) file storage for Knowledge Commons binary uploads; wire a bucket binding in wrangler.jsonc and secrets as needed (Naryan, 2026-11-16)

@@ -135,6 +135,12 @@ test("steward can RSVP to an event", async ({ request }) => {
     data: { eventId: 1, status: "going" },
   });
   expect(res.status()).toBe(200);
+
+  const maybe = await request.post("/api/events/rsvp", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { eventId: 1, status: "maybe" },
+  });
+  expect(maybe.status()).toBe(200);
 });
 
 test("circles nav lists memberships and circle detail pages open", async ({ request }) => {
@@ -152,6 +158,31 @@ test("circles nav lists memberships and circle detail pages open", async ({ requ
   const circleHtml = await circle.text();
   expect(circleHtml).toContain("Central Circle");
   expect(circleHtml).toContain("Members");
+  expect(circleHtml).toContain("Decision log");
+  expect(circleHtml).toContain("Central Circle charter draft");
+  expect(circleHtml).toContain("Open circle join requests");
+
+  const addResource = await request.post("/api/circles/resources", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      circleId: 1,
+      title: `Test resource ${Date.now()}`,
+      url: "https://example.com/resource",
+      note: "Added by test",
+    },
+  });
+  expect(addResource.status()).toBe(200);
+
+  const addDecision = await request.post("/api/circles/decisions", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      circleId: 1,
+      title: `Test decision ${Date.now()}`,
+      detail: "Logged by automated test",
+      decidedAt: "2026-11-16",
+    },
+  });
+  expect(addDecision.status()).toBe(200);
 });
 
 test("directory supports search and sector filter", async ({ request }) => {
@@ -206,6 +237,43 @@ test("events page has list/calendar views and collapsed add form", async ({ requ
   expect(html).toContain("data-add-event");
   expect(html).toContain('aria-expanded="false"');
   expect(html).toContain("Add an event");
+  expect(html).toContain("/api/events/calendar");
+  expect(html).toMatch(/\d+ going/);
+  expect(html).toContain('data-status="maybe"');
+
+  const ics = await request.get("/api/events/calendar", { headers: { cookie } });
+  expect(ics.status()).toBe(200);
+  const icsBody = await ics.text();
+  expect(icsBody).toContain("BEGIN:VCALENDAR");
+  expect(icsBody).toContain("BEGIN:VEVENT");
+});
+
+test("knowledge commons lists items and accepts new contributions", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const page = await request.get("/stewards/commons", { headers: { cookie } });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain("Knowledge Commons");
+  expect(html).toContain("Wellbeing Economy primer");
+
+  const create = await request.post("/api/commons", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      title: `Commons note ${Date.now()}`,
+      summary: "Shared by test",
+      url: "https://example.com/commons",
+      bodyText: "Prototype commons entry",
+      tags: "testing, commons",
+    },
+  });
+  expect(create.status()).toBe(200);
+
+  const blocked = await request.get("/stewards/commons", {
+    headers: { cookie: await login(request, "pending@weallcanada.local") },
+    maxRedirects: 0,
+  });
+  // Pending applicants are redirected away from active steward pages.
+  expect([302, 401, 403]).toContain(blocked.status());
 });
 
 test("admin can add an FAQ item", async ({ request }) => {

@@ -1,8 +1,14 @@
 ---
 import Base from "../../../layouts/Base.astro";
 import WeAllCircle from "../../../components/WeAllCircle.astro";
-import { currentUser } from "../../../lib/auth";
-import { getCircleBySlug, listCircleMembers, listEventsForUser } from "../../../lib/db";
+import { currentUser, hasRole } from "../../../lib/auth";
+import {
+  getCircleBySlug,
+  listCircleDecisions,
+  listCircleMembers,
+  listCircleResources,
+  listEventsForUser,
+} from "../../../lib/db";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
@@ -13,6 +19,9 @@ const circle = await getCircleBySlug(slug, user.id);
 if (!circle) return Astro.redirect("/stewards/circles");
 
 const members = await listCircleMembers(circle.id);
+const resources = await listCircleResources(circle.id);
+const decisions = await listCircleDecisions(circle.id);
+const canContribute = !!circle.membership || hasRole(user, "admin");
 const relatedEvents = (await listEventsForUser(user.id))
   .filter((e) => e.circle_name === circle.name)
   .slice(0, 5);
@@ -89,7 +98,65 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
 
   <section class="circle-section">
     <h2>Resources</h2>
-    <p class="note">Shared resources and a decision log will land here next.</p>
+    {resources.length === 0 ? (
+      <p class="meta">No shared resources yet.</p>
+    ) : (
+      <ul class="resource-list">
+        {resources.map((r) => (
+          <li>
+            <strong>{r.title}</strong>
+            <div class="meta">
+              {r.created_by_name} · {r.created_at.slice(0, 10)}
+            </div>
+            {r.url && (
+              <p>
+                <a href={r.url} target="_blank" rel="noopener noreferrer">{r.url}</a>
+              </p>
+            )}
+            {r.note && <p>{r.note}</p>}
+          </li>
+        ))}
+      </ul>
+    )}
+    {canContribute && (
+      <form id="resource-form" class="inline-form" data-circle-id={circle.id}>
+        <h3>Add a resource</h3>
+        <label>Title <input name="title" required maxlength="200" /></label>
+        <label>Link <input name="url" type="url" maxlength="500" placeholder="https://" /></label>
+        <label>Note <textarea name="note" rows="2" maxlength="2000"></textarea></label>
+        <button class="btn btn--quiet" type="submit">Save resource</button>
+        <p class="form-status" data-resource-status role="status"></p>
+      </form>
+    )}
+  </section>
+
+  <section class="circle-section">
+    <h2>Decision log</h2>
+    {decisions.length === 0 ? (
+      <p class="meta">No decisions recorded yet.</p>
+    ) : (
+      <ul class="resource-list">
+        {decisions.map((d) => (
+          <li>
+            <strong>{d.title}</strong>
+            <div class="meta">
+              Decided {d.decided_at.slice(0, 10)} · logged by {d.created_by_name}
+            </div>
+            {d.detail && <p>{d.detail}</p>}
+          </li>
+        ))}
+      </ul>
+    )}
+    {canContribute && (
+      <form id="decision-form" class="inline-form" data-circle-id={circle.id}>
+        <h3>Log a decision</h3>
+        <label>Title <input name="title" required maxlength="200" /></label>
+        <label>Detail <textarea name="detail" rows="3" maxlength="4000"></textarea></label>
+        <label>Decided on <input name="decidedAt" type="date" /></label>
+        <button class="btn btn--quiet" type="submit">Save decision</button>
+        <p class="form-status" data-decision-status role="status"></p>
+      </form>
+    )}
   </section>
 </Base>
 
@@ -134,12 +201,51 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
   }
 
   .member-list,
-  .event-list {
+  .event-list,
+  .resource-list {
     list-style: none;
     padding: 0;
     margin: 0;
     display: grid;
     gap: var(--space-3);
+  }
+
+  .resource-list li {
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .inline-form {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 32rem;
+    margin-top: var(--space-5);
+  }
+
+  .inline-form h3 {
+    margin: 0;
+    font-size: var(--text-md);
+  }
+
+  .inline-form label {
+    display: grid;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+
+  .inline-form input,
+  .inline-form textarea {
+    font: inherit;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .form-status {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
   }
 
   .member-list li {
@@ -193,5 +299,55 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
       return;
     }
     status.textContent = data.error ?? "Something went wrong.";
+  });
+
+  const resourceForm = document.querySelector<HTMLFormElement>("#resource-form");
+  resourceForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const statusEl = document.querySelector<HTMLParagraphElement>("[data-resource-status]");
+    if (!statusEl) return;
+    const data = new FormData(resourceForm);
+    statusEl.textContent = "Saving…";
+    const res = await fetch("/api/circles/resources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        circleId: Number(resourceForm.dataset.circleId),
+        title: data.get("title"),
+        url: data.get("url"),
+        note: data.get("note"),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = json.error ?? "Something went wrong.";
+      return;
+    }
+    location.reload();
+  });
+
+  const decisionForm = document.querySelector<HTMLFormElement>("#decision-form");
+  decisionForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const statusEl = document.querySelector<HTMLParagraphElement>("[data-decision-status]");
+    if (!statusEl) return;
+    const data = new FormData(decisionForm);
+    statusEl.textContent = "Saving…";
+    const res = await fetch("/api/circles/decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        circleId: Number(decisionForm.dataset.circleId),
+        title: data.get("title"),
+        detail: data.get("detail"),
+        decidedAt: data.get("decidedAt"),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = json.error ?? "Something went wrong.";
+      return;
+    }
+    location.reload();
   });
 </script>

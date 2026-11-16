@@ -1,0 +1,211 @@
+---
+import Base from "../../layouts/Base.astro";
+import { currentUser } from "../../lib/auth";
+import { listKnowledgeItems } from "../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (user.status !== "active") return Astro.redirect("/stewards/pending");
+
+const q = Astro.url.searchParams.get("q") ?? "";
+const items = await listKnowledgeItems(q);
+---
+<Base title="Knowledge Commons" active="commons" user={user}>
+  <h1>Knowledge Commons</h1>
+  <p class="lede">
+    Shared links and notes for the alliance. File uploads will arrive once your site operator turns on file storage.
+  </p>
+
+  <form class="filters" method="get" action="/stewards/commons">
+    <label>
+      <span class="sr-only">Search</span>
+      <input type="search" name="q" value={q} placeholder="Search title, tags, or notes" />
+    </label>
+    <button class="btn btn--primary" type="submit">Search</button>
+  </form>
+
+  <ul class="commons-list">
+    {items.length === 0 ? (
+      <li class="note">No items yet. Add the first one below.</li>
+    ) : (
+      items.map((item) => {
+        const tags = item.tags.split("|").filter(Boolean);
+        return (
+          <li class="commons-card">
+            <h2>{item.title}</h2>
+            <div class="meta">
+              Added by {item.created_by_name} · {item.created_at.slice(0, 10)}
+            </div>
+            {item.summary && <p>{item.summary}</p>}
+            {item.url && (
+              <p>
+                <a href={item.url} target="_blank" rel="noopener noreferrer">{item.url}</a>
+              </p>
+            )}
+            {item.body_text && (
+              <pre class="body-text">{item.body_text.replace(/\\n/g, "\n")}</pre>
+            )}
+            {tags.length > 0 && (
+              <p class="tags">
+                {tags.map((t) => (
+                  <span>{t}</span>
+                ))}
+              </p>
+            )}
+          </li>
+        );
+      })
+    )}
+  </ul>
+
+  <section class="add-panel" data-add-commons>
+    <button class="btn btn--quiet" type="button" data-add-toggle aria-expanded="false">+ Add an item</button>
+    <form id="commons-form" class="stack" hidden data-add-panel>
+      <h2>Add to the commons</h2>
+      <label>Title <input name="title" required maxlength="200" /></label>
+      <label>Summary <input name="summary" maxlength="500" /></label>
+      <label>Link (optional) <input name="url" type="url" maxlength="500" placeholder="https://" /></label>
+      <label>Notes <textarea name="bodyText" rows="5" maxlength="8000"></textarea></label>
+      <label>Tags <input name="tags" maxlength="200" placeholder="onboarding, circles" /></label>
+      <button class="btn btn--primary" type="submit">Save item</button>
+      <p id="commons-status" role="status"></p>
+    </form>
+  </section>
+</Base>
+
+<style>
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin: var(--space-6) 0;
+  }
+
+  .filters input {
+    font: inherit;
+    min-width: min(24rem, 100%);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .commons-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-6);
+  }
+
+  .commons-card {
+    padding-bottom: var(--space-6);
+    border-bottom: 1px solid var(--color-surface-subtle);
+  }
+
+  .commons-card h2 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-lg);
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-3);
+  }
+
+  .body-text {
+    white-space: pre-wrap;
+    font-family: var(--font-sans);
+    background: var(--color-surface-subtle);
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    margin: var(--space-3) 0 0;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+  }
+
+  .tags span {
+    font-size: var(--text-sm);
+    color: var(--color-blue);
+    background: color-mix(in srgb, var(--color-cyan) 18%, transparent);
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .add-panel {
+    margin-top: var(--space-10);
+  }
+
+  .stack {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 36rem;
+    margin-top: var(--space-4);
+  }
+
+  .stack label {
+    display: grid;
+    gap: var(--space-1);
+    font-weight: 700;
+    font-size: var(--text-sm);
+  }
+
+  .stack input,
+  .stack textarea {
+    font: inherit;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+  }
+</style>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>("[data-add-toggle]");
+  const panel = document.querySelector<HTMLElement>("[data-add-panel]");
+  const form = document.querySelector<HTMLFormElement>("#commons-form");
+  const status = document.querySelector<HTMLParagraphElement>("#commons-status");
+
+  toggle?.addEventListener("click", () => {
+    if (!panel || !toggle) return;
+    const open = panel.hasAttribute("hidden");
+    panel.toggleAttribute("hidden", !open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!status) return;
+    const data = new FormData(form);
+    status.textContent = "Saving…";
+    const res = await fetch("/api/commons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: data.get("title"),
+        summary: data.get("summary"),
+        url: data.get("url"),
+        bodyText: data.get("bodyText"),
+        tags: data.get("tags"),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      status.textContent = json.error ?? "Something went wrong.";
+      return;
+    }
+    location.reload();
+  });
+</script>
