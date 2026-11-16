@@ -34,3 +34,4 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Account menu Edit profile includes a person icon. (tests/stewards-platform.spec.ts)
 - [auto] Interest matching (“Who is interested?”) returns topic matches; network map page embeds graph data. (tests/stewards-platform.spec.ts)
 - [auto] Admin analytics shows range controls, steward/network metrics, and blocks non-admins. (tests/stewards-platform.spec.ts)
+- [auto] Admin people list supports search/status filters, role updates, and blocks non-admins; admins can’t remove their own admin role. (tests/stewards-platform.spec.ts)

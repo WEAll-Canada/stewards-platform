@@ -324,6 +324,51 @@ test("admin can reply to email and simulate a campaign", async ({ request }) => 
   expect((await send.json()).mode).toBe("simulated");
 });
 
+test("admin people list supports search, roles, and blocks non-admins", async ({ request }) => {
+  const adminCookie = await login(request, "admin@weallcanada.local");
+  const page = await request.get("/stewards/admin/people?q=alex&status=active", {
+    headers: { cookie: adminCookie },
+  });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain('id="tab-people"');
+  expect(html).toContain("Alex Steward");
+  expect(html).toContain("Circle lead");
+
+  const promote = await request.post("/api/admin/people", {
+    headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: {
+      userId: 3,
+      roles: ["steward", "circle_lead"],
+      status: "active",
+    },
+  });
+  expect(promote.status()).toBe(200);
+
+  const selfLock = await request.post("/api/admin/people", {
+    headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { userId: 1, roles: ["steward"] },
+  });
+  expect(selfLock.status()).toBe(400);
+
+  const blocked = await request.get("/stewards/admin/people", {
+    headers: { cookie: await login(request, "alex@weallcanada.local") },
+    maxRedirects: 0,
+  });
+  expect(blocked.status()).toBe(302);
+  expect(blocked.headers()["location"] || "").toContain("/stewards/dashboard");
+
+  const forbidden = await request.post("/api/admin/people", {
+    headers: {
+      cookie: await login(request, "alex@weallcanada.local"),
+      "Content-Type": "application/json",
+      ...asVisitor(),
+    },
+    data: { userId: 3, roles: ["admin"] },
+  });
+  expect(forbidden.status()).toBe(403);
+});
+
 test("admin analytics shows ranges, steward metrics, and trends", async ({ request }) => {
   const cookie = await login(request, "admin@weallcanada.local");
   const page = await request.get("/stewards/admin/analytics?range=30d", { headers: { cookie } });

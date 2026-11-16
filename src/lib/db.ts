@@ -263,6 +263,115 @@ export async function reviewApplication(
   return { ok: true };
 }
 
+export const ADMIN_ROLE_NAMES = ["steward", "circle_lead", "admin"] as const;
+export type AdminRoleName = (typeof ADMIN_ROLE_NAMES)[number];
+
+export interface AdminPersonRow {
+  id: number;
+  email: string;
+  status: StewardUser["status"];
+  created_at: string;
+  display_name: string;
+  partner_org: string;
+  sector: string;
+  roles: string[];
+}
+
+export async function listAdminPeople(filters: {
+  q?: string;
+  status?: "all" | StewardUser["status"];
+} = {}): Promise<AdminPersonRow[]> {
+  const q = (filters.q ?? "").trim().toLowerCase();
+  const status = filters.status && filters.status !== "all" ? filters.status : null;
+  const clauses: string[] = [];
+  const binds: (string | number)[] = [];
+
+  if (status) {
+    clauses.push("u.status = ?");
+    binds.push(status);
+  }
+  if (q) {
+    clauses.push(
+      `(lower(u.email) LIKE ? OR lower(COALESCE(p.display_name, '')) LIKE ? OR lower(COALESCE(p.partner_org, '')) LIKE ?)`,
+    );
+    const like = `%${q}%`;
+    binds.push(like, like, like);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, u.email, u.status, u.created_at,
+            COALESCE(p.display_name, '') AS display_name,
+            COALESCE(p.partner_org, '') AS partner_org,
+            COALESCE(p.sector, '') AS sector
+     FROM users u
+     LEFT JOIN profiles p ON p.user_id = u.id
+     ${where}
+     ORDER BY lower(COALESCE(NULLIF(p.display_name, ''), u.email)) COLLATE NOCASE, u.id`,
+  )
+    .bind(...binds)
+    .all<{
+      id: number;
+      email: string;
+      status: StewardUser["status"];
+      created_at: string;
+      display_name: string;
+      partner_org: string;
+      sector: string;
+    }>();
+
+  const people: AdminPersonRow[] = [];
+  for (const row of results) {
+    people.push({
+      ...row,
+      roles: await rolesForUser(row.id),
+    });
+  }
+  return people;
+}
+
+export async function updateAdminPerson(
+  userId: number,
+  input: {
+    status?: StewardUser["status"];
+    roles?: string[];
+  },
+  actorId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const target = await getUserById(userId);
+  if (!target) return { ok: false, error: "Person not found." };
+
+  if (input.status) {
+    if (!["applicant", "active", "disabled"].includes(input.status)) {
+      return { ok: false, error: "Invalid status." };
+    }
+    if (userId === actorId && input.status !== "active") {
+      return { ok: false, error: "You can’t disable your own account." };
+    }
+    await env.DB.prepare(`UPDATE users SET status = ? WHERE id = ?`).bind(input.status, userId).run();
+  }
+
+  if (input.roles) {
+    const wanted = [...new Set(input.roles.filter((r): r is AdminRoleName =>
+      (ADMIN_ROLE_NAMES as readonly string[]).includes(r),
+    ))];
+    if (userId === actorId && !wanted.includes("admin")) {
+      return { ok: false, error: "You can’t remove your own admin role." };
+    }
+    await env.DB.prepare(`DELETE FROM user_roles WHERE user_id = ?`).bind(userId).run();
+    for (const name of wanted) {
+      await env.DB.prepare(
+        `INSERT INTO user_roles (user_id, role_id)
+         SELECT ?, id FROM roles WHERE name = ?`,
+      )
+        .bind(userId, name)
+        .run();
+    }
+  }
+
+  return { ok: true };
+}
+
 export async function createSession(id: string, userId: number, expiresAt: string): Promise<void> {
   await env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)`).bind(id, userId, expiresAt).run();
 }

@@ -1,0 +1,242 @@
+---
+import AdminSubnav from "../../../components/AdminSubnav.astro";
+import Base from "../../../layouts/Base.astro";
+import { currentUser, hasRole } from "../../../lib/auth";
+import { ADMIN_ROLE_NAMES, listAdminPeople, type StewardUser } from "../../../lib/db";
+
+const user = await currentUser(Astro.request);
+if (!user) return Astro.redirect("/stewards/login");
+if (!hasRole(user, "admin")) return Astro.redirect("/stewards/dashboard");
+
+const params = Astro.url.searchParams;
+const q = params.get("q") ?? "";
+const statusParam = params.get("status") ?? "all";
+const statusFilter = (["all", "active", "applicant", "disabled"].includes(statusParam)
+  ? statusParam
+  : "all") as "all" | StewardUser["status"];
+
+const people = await listAdminPeople({ q, status: statusFilter });
+
+const roleLabels: Record<(typeof ADMIN_ROLE_NAMES)[number], string> = {
+  steward: "Steward",
+  circle_lead: "Circle lead",
+  admin: "Admin",
+};
+
+const statusFilters = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "applicant", label: "Applicant" },
+  { value: "disabled", label: "Disabled" },
+] as const;
+---
+<Base title="Admin · People" active="admin" user={user}>
+  <h1>Admin</h1>
+  <p class="lede">
+    Search the alliance roster, change account status, and assign roles.
+  </p>
+  <AdminSubnav active="people" />
+
+  <form class="filters" method="get" action="/stewards/admin/people">
+    <label>
+      <span class="sr-only">Search</span>
+      <input type="search" name="q" value={q} placeholder="Search name, email, or org" />
+    </label>
+    <label>
+      Status
+      <select name="status">
+        {statusFilters.map((s) => (
+          <option value={s.value} selected={statusFilter === s.value}>{s.label}</option>
+        ))}
+      </select>
+    </label>
+    <button class="btn btn--primary" type="submit">Filter</button>
+  </form>
+
+  <p id="people-status" class="note" aria-live="polite">{people.length} people</p>
+
+  {people.length === 0 ? (
+    <p class="note">No people match those filters.</p>
+  ) : (
+    <ul class="people-list">
+      {people.map((person) => {
+        const roleSet = new Set(person.roles);
+        const isSelf = person.id === user.id;
+        return (
+          <li class="person-card" data-user-id={person.id} data-self={isSelf ? "1" : "0"}>
+            <div class="person-main">
+              <strong>{person.display_name || person.email}</strong>
+              <div class="meta">
+                {person.email}
+                {person.partner_org ? ` · ${person.partner_org}` : ""}
+                {person.sector ? ` · ${person.sector}` : ""}
+                {" · joined "}
+                {person.created_at.slice(0, 10)}
+              </div>
+              <label class="status-label">
+                Status
+                <select data-status disabled={isSelf && person.status === "active"}>
+                  <option value="active" selected={person.status === "active"}>Active</option>
+                  <option value="applicant" selected={person.status === "applicant"}>Applicant</option>
+                  <option value="disabled" selected={person.status === "disabled"}>Disabled</option>
+                </select>
+              </label>
+            </div>
+            <fieldset class="roles">
+              <legend>Roles</legend>
+              {ADMIN_ROLE_NAMES.map((role) => (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-role={role}
+                    checked={roleSet.has(role)}
+                    disabled={isSelf && role === "admin"}
+                  />
+                  {roleLabels[role]}
+                </label>
+              ))}
+              <button class="btn btn--quiet" type="button" data-save>Save</button>
+            </fieldset>
+          </li>
+        );
+      })}
+    </ul>
+  )}
+</Base>
+
+<style>
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: end;
+    margin-bottom: var(--space-4);
+  }
+
+  .filters label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-muted);
+  }
+
+  .filters input,
+  .filters select,
+  .status-label select {
+    font: inherit;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-sm);
+    min-width: 12rem;
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  .people-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .person-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-4);
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--color-surface-subtle);
+    align-items: start;
+  }
+
+  .meta {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    margin: var(--space-1) 0 var(--space-3);
+  }
+
+  .status-label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-muted);
+    max-width: 12rem;
+  }
+
+  .roles {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 11rem;
+  }
+
+  .roles legend {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-muted);
+    margin-bottom: var(--space-1);
+  }
+
+  .roles label {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 720px) {
+    .person-card {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const statusEl = document.querySelector<HTMLParagraphElement>("#people-status")!;
+
+  document.querySelectorAll<HTMLElement>(".person-card").forEach((card) => {
+    const userId = Number(card.dataset.userId);
+    const saveBtn = card.querySelector<HTMLButtonElement>("[data-save]")!;
+    const statusSelect = card.querySelector<HTMLSelectElement>("[data-status]")!;
+
+    async function save() {
+      const roles = [...card.querySelectorAll<HTMLInputElement>("input[data-role]:checked")].map(
+        (el) => el.dataset.role!,
+      );
+      statusEl.textContent = "Saving…";
+      const res = await fetch("/api/admin/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          status: statusSelect.value,
+          roles,
+        }),
+      });
+      const data = await res.json();
+      statusEl.textContent = res.ok ? "Saved." : (data.error ?? "Something went wrong.");
+    }
+
+    saveBtn.addEventListener("click", () => void save());
+    statusSelect.addEventListener("change", () => void save());
+  });
+</script>
