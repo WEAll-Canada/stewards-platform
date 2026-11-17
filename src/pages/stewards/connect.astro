@@ -25,14 +25,14 @@ const results = query.length >= 2 ? rankInterestMatches(candidates, query, user.
 const chips = suggestInterestChips(query, 10);
 const popular = INTERESTS.filter((i) => i !== "Other").slice(0, 8);
 ---
-<Base title="Connect · Who is interested?" active="connect" user={user}>
+<Base title="Connect · Network search" active="connect" user={user}>
   <h1>Connect</h1>
-  <p class="lede">Ask “Who is interested in X?” — match by interests, bio, and shared tags with you.</p>
+  <p class="lede">Search the network by topic — match by interests, bio, and shared tags with you.</p>
   <ConnectSubnav active="match" />
 
   <form class="match-form" method="get" action="/stewards/connect" role="search">
     <label>
-      Who is interested in…
+      Network search
       <input
         type="search"
         name="q"

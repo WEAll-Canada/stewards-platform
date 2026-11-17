@@ -19,3 +19,4 @@ When an item is finished, check it off and add the date it was done:
 - [ ] Add Google OAuth client IDs/secrets for steward login (tech steward, 2026-11-11)
 - [ ] Add Resend API key (and EMAIL_FROM) for live alliance email on staging/production (tech steward, 2026-11-11)
 - [ ] Add Cloudflare R2 (or similar) file storage for Knowledge Commons binary uploads; wire a bucket binding in wrangler.jsonc and secrets as needed (Naryan, 2026-11-16)
+- [ ] Production cutover: attach custom domain stewards.weallcanada.org to weall-prod Worker; DNS CNAME at EthicalHost/registrar; link from WordPress main site; confirm SESSION_SECRET and Turnstile hostnames for the new domain (Naryan, 2026-11-17)

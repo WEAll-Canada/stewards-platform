@@ -1,4 +1,5 @@
 ---
+import ConnectSubnav from "../../components/ConnectSubnav.astro";
 import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
 import { currentUser } from "../../lib/auth";
@@ -31,13 +32,14 @@ function interestList(raw: string) {
   return (raw || "").split("|").filter(Boolean);
 }
 ---
-<Base title="Directory" active="directory" user={user}>
-  <h1>Alliance directory</h1>
+<Base title="Connect · Directory" active="connect" user={user}>
+  <h1>Connect</h1>
   <p class="lede">
     Find stewards by name, region, sector, or interest — then share a connection or message.
-    Or ask <a href="/stewards/connect">who is interested in a topic</a> and explore the
+    Or try <a href="/stewards/connect">network search</a> and explore the{" "}
     <a href="/stewards/network">network map</a>.
   </p>
+  <ConnectSubnav active="directory" />
 
   <form class="dir-filters" method="get" action="/stewards/directory" role="search">
     <label class="dir-filters__search">
@@ -102,13 +104,18 @@ function interestList(raw: string) {
               <StewardAvatar name={s.display_name || "Steward"} avatarUrl={s.avatar_url} size="md" />
               <div class="dir-card__identity">
                 <strong>{s.display_name || "Steward"}</strong>
-                {s.partner_org && <div class="org">{s.partner_org}</div>}
+                {s.bio ? (
+                  <p class="dir-card__bio">{s.bio}</p>
+                ) : (
+                  s.partner_org && <div class="org">{s.partner_org}</div>
+                )}
                 <div class="meta">
-                  {[s.regions || s.location, s.sector].filter(Boolean).join(" · ")}
+                  {[s.partner_org && s.bio ? s.partner_org : null, s.regions || s.location, s.sector]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </div>
               </div>
             </div>
-            {s.bio && <p class="dir-card__bio">{s.bio}</p>}
             {interests.length > 0 && (
               <ul class="dir-card__tags">
                 {interests.slice(0, 4).map((tag) => <li>{tag}</li>)}
@@ -168,7 +175,7 @@ function interestList(raw: string) {
 
       <label>
         How often do you connect?
-        <select name="strength" required>
+        <select name="strength" id="connect-strength">
           <option value="" disabled selected>Choose one…</option>
           {CONNECTION_STRENGTHS.map((s) => (
             <option value={s.value}>{s.label}</option>
@@ -187,7 +194,7 @@ function interestList(raw: string) {
       </fieldset>
 
       <div class="connect-dialog__actions">
-        <button class="btn btn--quiet" type="submit" value="cancel">Cancel</button>
+        <button class="btn btn--quiet" type="button" id="connect-cancel" value="cancel">Cancel</button>
         <button class="btn btn--primary" type="submit" value="save">Save</button>
       </div>
       <p id="connect-dialog-status" role="status"></p>
@@ -255,7 +262,7 @@ function interestList(raw: string) {
   }
 
   .dir-card__bio {
-    margin: 0;
+    margin: 0.25rem 0 0;
     color: var(--color-ink-soft);
     font-size: var(--text-sm);
     display: -webkit-box;
@@ -297,11 +304,12 @@ function interestList(raw: string) {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: var(--radius-md);
+    border-radius: 50%;
     border: 1px solid var(--color-ink);
     background: var(--color-surface);
     color: var(--color-ink);
     cursor: pointer;
+    flex-shrink: 0;
   }
 
   .icon-btn:hover {
@@ -423,22 +431,35 @@ function interestList(raw: string) {
   const status = document.querySelector<HTMLParagraphElement>("#dir-status")!;
   const dialog = document.querySelector<HTMLDialogElement>("#connect-dialog")!;
   const form = document.querySelector<HTMLFormElement>("#connect-form")!;
+  const titleEl = document.querySelector<HTMLHeadingElement>("#connect-dialog-title")!;
   const nameEl = document.querySelector<HTMLParagraphElement>("#connect-dialog-name")!;
   const dialogStatus = document.querySelector<HTMLParagraphElement>("#connect-dialog-status")!;
+  const cancelBtn = document.querySelector<HTMLButtonElement>("#connect-cancel")!;
   let targetId = 0;
+
+  function resetConnectForm() {
+    dialogStatus.textContent = "";
+    form.querySelectorAll<HTMLInputElement>('input[name="reasons"]').forEach((el) => {
+      el.checked = false;
+    });
+    const strength = form.querySelector<HTMLSelectElement>('select[name="strength"]');
+    if (strength) strength.value = "";
+  }
+
+  cancelBtn.addEventListener("click", () => {
+    resetConnectForm();
+    dialog.close();
+  });
 
   document.querySelectorAll<HTMLElement>(".dir-card[data-id]").forEach((card) => {
     const id = Number(card.dataset.id);
 
     card.querySelector<HTMLButtonElement>(".connect-btn")?.addEventListener("click", () => {
       targetId = id;
+      const isConnected = card.querySelector<HTMLButtonElement>(".connect-btn")?.dataset.connected === "1";
+      titleEl.textContent = isConnected ? "Update connection" : "Share connection";
       nameEl.textContent = `With ${card.dataset.name ?? "this steward"}`;
-      dialogStatus.textContent = "";
-      form.querySelectorAll<HTMLInputElement>('input[name="reasons"]').forEach((el) => {
-        el.checked = false;
-      });
-      const strength = form.querySelector<HTMLSelectElement>('select[name="strength"]');
-      if (strength) strength.value = "";
+      resetConnectForm();
       dialog.showModal();
     });
 
@@ -459,14 +480,21 @@ function interestList(raw: string) {
   });
 
   form.addEventListener("submit", async (event) => {
-    const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
-    if (submitter?.value === "cancel") return;
     event.preventDefault();
-    dialogStatus.textContent = "Saving connection…";
-    const strength = Number(new FormData(form).get("strength"));
+    const strengthRaw = new FormData(form).get("strength");
+    const strength = Number(strengthRaw);
     const reasons = [...form.querySelectorAll<HTMLInputElement>('input[name="reasons"]:checked')].map(
       (el) => el.value,
     );
+    if (!strengthRaw || Number.isNaN(strength) || strength < 1) {
+      dialogStatus.textContent = "Choose how often you connect.";
+      return;
+    }
+    if (reasons.length === 0) {
+      dialogStatus.textContent = "Pick at least one reason.";
+      return;
+    }
+    dialogStatus.textContent = "Saving connection…";
     const res = await fetch("/api/connections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

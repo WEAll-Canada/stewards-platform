@@ -46,6 +46,12 @@ const payload = JSON.stringify({
     {graph.nodes.length} stewards · {graph.edges.length} connection{graph.edges.length === 1 ? "" : "s"}
   </p>
 
+  <div class="map-toolbar">
+    <button type="button" class="btn btn--quiet" data-map-fullscreen aria-pressed="false">
+      Full screen
+    </button>
+  </div>
+
   <div class="map-shell" data-map-root>
     <svg class="network-map" role="img" aria-label="Steward network map" data-map-svg></svg>
     <aside class="map-panel" data-panel hidden>
@@ -88,6 +94,12 @@ const payload = JSON.stringify({
     margin: 0 0 var(--space-3);
   }
 
+  .map-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 var(--space-2);
+  }
+
   .map-shell {
     position: relative;
     border: 1px solid var(--color-surface-subtle);
@@ -95,6 +107,18 @@ const payload = JSON.stringify({
     background: #f8fafc;
     min-height: 28rem;
     overflow: hidden;
+  }
+
+  .map-shell:fullscreen {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    background: #f8fafc;
+  }
+
+  .map-shell:fullscreen .network-map {
+    height: 100%;
   }
 
   .network-map {
@@ -235,6 +259,7 @@ const payload = JSON.stringify({
   const root = document.querySelector<HTMLElement>("[data-map-root]");
   const svg = document.querySelector<SVGSVGElement>("[data-map-svg]");
   const panel = document.querySelector<HTMLElement>("[data-panel]");
+  const fullscreenBtn = document.querySelector<HTMLButtonElement>("[data-map-fullscreen]");
   if (!root || !svg || !panel) throw new Error("Network map missing root elements");
 
   const panelName = panel.querySelector("[data-panel-name]")!;
@@ -487,5 +512,29 @@ const payload = JSON.stringify({
     panel.hidden = true;
     selectedId = null;
     applySpotlight();
+  });
+
+  function syncFullscreenLabel() {
+    if (!fullscreenBtn) return;
+    const on = document.fullscreenElement === root;
+    fullscreenBtn.textContent = on ? "Exit full screen" : "Full screen";
+    fullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  fullscreenBtn?.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement === root) {
+        await document.exitFullscreen();
+      } else {
+        await root.requestFullscreen();
+      }
+    } catch {
+      /* browser blocked fullscreen */
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    syncFullscreenLabel();
+    relayout();
   });
 </script>

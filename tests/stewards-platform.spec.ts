@@ -583,7 +583,7 @@ test("interest matching finds stewards by topic and network map renders", async 
   const connectHome = await request.get("/stewards/connect", { headers: { cookie } });
   expect(connectHome.status()).toBe(200);
   const homeHtml = await connectHome.text();
-  expect(homeHtml).toContain("Who is interested");
+  expect(homeHtml).toContain("Network search");
   expect(homeHtml).toContain("/stewards/network");
   expect(homeHtml).toContain("Climate");
 
@@ -602,4 +602,48 @@ test("interest matching finds stewards by topic and network map renders", async 
   expect(networkHtml).toContain("network-data");
   expect(networkHtml).toContain('"edges"');
   expect(networkHtml).toContain('"nodes"');
+  expect(networkHtml).toContain("data-map-fullscreen");
+});
+
+test("dashboard and connect first-pass feedback", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+
+  const dash = await request.get("/stewards/dashboard", { headers: { cookie } });
+  expect(dash.status()).toBe(200);
+  const dashHtml = await dash.text();
+  expect(dashHtml).not.toContain("Stewards home");
+  expect(dashHtml).toContain("events-upcoming");
+  expect(dashHtml).toMatch(/directory<\/a>,\s/);
+
+  await request.post("/api/connections", {
+    headers: { cookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { toUserId: 1, strength: 2, reasons: ["work"] },
+  });
+
+  const dir = await request.get("/stewards/directory", { headers: { cookie } });
+  expect(dir.status()).toBe(200);
+  const dirHtml = await dir.text();
+  expect(dirHtml).toContain('id="tab-directory"');
+  expect(dirHtml).toContain("Network search");
+  expect(dirHtml).toContain('class="icon-btn message-btn"');
+  expect(dirHtml).toContain('id="connect-cancel"');
+  expect(dirHtml).toContain("Share connection");
+  expect(dirHtml).toContain("Update connection");
+  expect(dirHtml).toContain("dir-card__bio");
+  // Directory lives under Connect in the header flyout.
+  expect(dirHtml).toMatch(/data-connect-panel[\s\S]*href="\/stewards\/directory"/);
+
+  // Among seeded stewards, newer joins appear before older ones (Priya > Jordan > Alex > Admin).
+  const cardNames = [...dirHtml.matchAll(/dir-card"[^>]*data-name="([^"]+)"/g)].map((m) => m[1]);
+  const priya = cardNames.indexOf("Priya Nair");
+  const jordan = cardNames.indexOf("Jordan Lee");
+  const alex = cardNames.indexOf("Alex Steward");
+  const admin = cardNames.indexOf("Platform Admin");
+  expect(priya).toBeGreaterThan(-1);
+  expect(jordan).toBeGreaterThan(-1);
+  expect(alex).toBeGreaterThan(-1);
+  expect(admin).toBeGreaterThan(-1);
+  expect(priya).toBeLessThan(jordan);
+  expect(jordan).toBeLessThan(alex);
+  expect(alex).toBeLessThan(admin);
 });

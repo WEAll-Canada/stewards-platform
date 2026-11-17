@@ -1,10 +1,19 @@
 ---
 interface Props {
-  active: "match" | "network";
+  active: "directory" | "match" | "network";
 }
 const { active } = Astro.props;
 ---
 <nav class="tabs" role="tablist" aria-label="Connect sections">
+  <a
+    class:list={["tabs__tab", { "is-active": active === "directory" }]}
+    href="/stewards/directory"
+    role="tab"
+    aria-selected={active === "directory"}
+    id="tab-directory"
+  >
+    Directory
+  </a>
   <a
     class:list={["tabs__tab", { "is-active": active === "match" }]}
     href="/stewards/connect"
@@ -12,7 +21,7 @@ const { active } = Astro.props;
     aria-selected={active === "match"}
     id="tab-match"
   >
-    Who is interested?
+    Network search
   </a>
   <a
     class:list={["tabs__tab", { "is-active": active === "network" }]}

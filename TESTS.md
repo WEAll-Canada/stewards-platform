@@ -32,7 +32,8 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Alliance email has Profile-style Inbox/Campaigns tabs, split inbox, templates/audience composer, drafts, and simulated send. (tests/stewards-platform.spec.ts)
 
 - [auto] Account menu Edit profile includes a person icon. (tests/stewards-platform.spec.ts)
-- [auto] Interest matching (“Who is interested?”) returns topic matches; network map page embeds graph data. (tests/stewards-platform.spec.ts)
+- [auto] Interest matching (Network search) returns topic matches; network map page embeds graph data and a full-screen control. (tests/stewards-platform.spec.ts)
+- [auto] Dashboard drops “Stewards home”; Connect nests Directory; directory sorts newest first and keeps a cancel control on the connection dialog. (tests/stewards-platform.spec.ts)
 - [auto] Admin analytics shows range controls, steward/network metrics, and blocks non-admins. (tests/stewards-platform.spec.ts)
 - [auto] Admin people list supports search/status filters, role updates, and blocks non-admins; admins can’t remove their own admin role. (tests/stewards-platform.spec.ts)
 - [auto] Knowledge Commons lists seeded items and lets active stewards add a link/note entry. (tests/stewards-platform.spec.ts)

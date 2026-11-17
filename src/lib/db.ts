@@ -480,7 +480,7 @@ export async function listDirectoryStewards(filters: DirectoryFilters = {}): Pro
      JOIN profiles p ON p.user_id = u.id
      JOIN preferences pref ON pref.user_id = u.id
      WHERE ${clauses.join(" AND ")}
-     ORDER BY p.display_name COLLATE NOCASE ASC`,
+     ORDER BY u.created_at DESC, u.id DESC`,
   );
   const { results } = binds.length ? await stmt.bind(...binds).all<DirectorySteward>() : await stmt.all<DirectorySteward>();
   return results;

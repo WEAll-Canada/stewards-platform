@@ -23,7 +23,6 @@ const accountLabel = user?.display_name || user?.email || "Account";
     {user?.status === "active" ? (
       <nav class="site-header__nav" aria-label="Primary">
         <a href="/stewards/dashboard" class:list={{ "is-active": active === "dashboard" }}>Dashboard</a>
-        <a href="/stewards/directory" class:list={{ "is-active": active === "directory" }}>Directory</a>
         <div class="nav-flyout" data-connect-nav>
           <a
             href="/stewards/connect"
@@ -35,7 +34,8 @@ const accountLabel = user?.display_name || user?.email || "Account";
             Connect
           </a>
           <div class="nav-flyout__panel" role="menu" data-connect-panel hidden>
-            <a role="menuitem" href="/stewards/connect">Who is interested?</a>
+            <a role="menuitem" href="/stewards/directory">Directory</a>
+            <a role="menuitem" href="/stewards/connect">Network search</a>
             <a role="menuitem" href="/stewards/network">Network map</a>
           </div>
         </div>

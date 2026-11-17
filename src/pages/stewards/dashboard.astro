@@ -26,7 +26,6 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
 ---
 <Base title="Dashboard" active="dashboard" user={user}>
   <header class="dash-intro">
-    <p class="eyebrow">Stewards home</p>
     <h1>Welcome, {user.display_name || "steward"}</h1>
     <p class="lede">Your place to see circles, conversations, and what’s coming next.</p>
   </header>
@@ -39,9 +38,9 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
       <div>
         <h2>Alliance</h2>
         <p>
-          Browse the <a href="/stewards/directory">directory</a>,
-          <a href="/stewards/connect">find shared interests</a>,
-          explore the <a href="/stewards/network">network map</a>,
+          Browse the <a href="/stewards/directory">directory</a>,{" "}
+          <a href="/stewards/connect">find shared interests</a>,{" "}
+          explore the <a href="/stewards/network">network map</a>,{" "}
           or open the <a href="/stewards/commons">Knowledge Commons</a>.
         </p>
       </div>
@@ -102,7 +101,7 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
       )}
     </section>
 
-    <section class="panel panel--wide">
+    <section class="panel panel--wide panel--events">
       <h2>Events today</h2>
       {todayEvents.length === 0 ? (
         <p>Nothing on the calendar today. <a href="/stewards/events">See all events</a>.</p>
@@ -119,25 +118,25 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
           ))}
         </ul>
       )}
-    </section>
 
-    <section class="panel">
-      <h2>Upcoming</h2>
-      {upcoming.length === 0 ? (
-        <p>No upcoming events yet. <a href="/stewards/events">See calendar</a>.</p>
-      ) : (
-        <ul class="plain-list plain-list--events">
-          {upcoming.map((e) => (
-            <li>
-              <time datetime={e.starts_at}>{e.starts_at.slice(0, 10)}</time>
-              <div>
-                <a href="/stewards/events">{e.title}</a>
-                {e.circle_name && <div class="meta">{e.circle_name}</div>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div class="events-upcoming">
+        <h2>Upcoming</h2>
+        {upcoming.length === 0 ? (
+          <p>No upcoming events yet. <a href="/stewards/events">See calendar</a>.</p>
+        ) : (
+          <ul class="plain-list plain-list--events">
+            {upcoming.map((e) => (
+              <li>
+                <time datetime={e.starts_at}>{e.starts_at.slice(0, 10)}</time>
+                <div>
+                  <a href="/stewards/events">{e.title}</a>
+                  {e.circle_name && <div class="meta">{e.circle_name}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
 
     <section class="panel">
@@ -162,15 +161,6 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
   .dash-intro {
     margin-bottom: var(--space-8);
     max-width: 40rem;
-  }
-
-  .eyebrow {
-    margin: 0 0 var(--space-2);
-    font-size: var(--text-sm);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-blue);
   }
 
   .dash-bento {
@@ -200,10 +190,18 @@ const attentionCount = dash.pendingApplications + dash.pendingCircleJoins;
   }
 
   .panel h2 {
-    font-family: var(--font-display);
+    /* Rubik Mono One only ships one heavy cut — use the cleaner sans for section titles. */
+    font-family: var(--font-sans);
     font-size: var(--text-lg);
-    letter-spacing: -0.02em;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     margin: 0 0 var(--space-3);
+  }
+
+  .events-upcoming {
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-surface-subtle);
   }
 
   .panel p,
