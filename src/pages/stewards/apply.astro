@@ -302,6 +302,11 @@ const aboutHint = settings.about_hint || DEFAULT_ABOUT.hint;
       location.href = data.redirect ?? "/stewards/pending";
       return;
     }
+    if (res.status === 409 && typeof data.redirect === "string") {
+      status.textContent = data.error ?? "That email already has an account.";
+      location.href = data.redirect;
+      return;
+    }
     status.textContent = data.error ?? "Something went wrong.";
     (window as unknown as { turnstile?: { reset: () => void } }).turnstile?.reset();
   });

@@ -9,5 +9,6 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 SESSION_SECRET=local-dev-session-secret-change-me
 
 # Optional. Without this, alliance email replies/campaigns simulate locally.
+# See EMAIL_SETUP.md for Resend + Ethical Host domain/forwarder layout.
 # RESEND_API_KEY=
-# EMAIL_FROM=WeAll Canada <hello@weallcanada.com>
+# EMAIL_FROM=WeAll Canada <contact@weallcanada.org>

@@ -131,3 +131,62 @@ test("migrating steward can activate without the full survey", async ({ request 
   });
   expect(review.status()).toBe(200);
 });
+
+test("imported steward can claim their account via activate", async ({ request }) => {
+  const claimed = await request.post("/api/activate", {
+    headers: asVisitor(),
+    data: {
+      name: "Imported Steward",
+      email: "imported@weallcanada.local",
+      password: "password123",
+      confirm_existing: true,
+      charter_agreed: true,
+      turnstileToken: TOKEN,
+    },
+  });
+  expect(claimed.status()).toBe(200);
+  const body = await claimed.json();
+  expect(body.redirect).toBe("/stewards/dashboard");
+  expect(body.claimed).toBe(true);
+
+  const cookie = claimed.headers()["set-cookie"]?.split(";")[0] ?? "";
+  const dash = await request.get("/stewards/dashboard", { headers: { cookie } });
+  expect(dash.status()).toBe(200);
+
+  const login = await request.post("/api/login", {
+    headers: asVisitor(),
+    data: {
+      email: "imported@weallcanada.local",
+      password: "password123",
+      turnstileToken: TOKEN,
+    },
+  });
+  expect(login.status()).toBe(200);
+});
+
+test("apply with an existing email points to activate", async ({ request }) => {
+  const res = await request.post("/api/apply", {
+    headers: asVisitor(),
+    data: {
+      name: "Duplicate Person",
+      email: "alex@weallcanada.local",
+      password: "password123",
+      profile_type: "steward",
+      contact_links: "alex@weallcanada.local",
+      regions: "Quebec",
+      map_address: "Montreal",
+      sector: "NGO",
+      sector_other: "",
+      interests: ["Climate"],
+      interest_other: "",
+      about: "Trying to join again with an existing email.",
+      charter_agreed: true,
+      turnstileToken: TOKEN,
+    },
+  });
+  expect(res.status()).toBe(409);
+  const body = await res.json();
+  expect(body.redirect).toContain("/stewards/activate");
+  expect(body.redirect).toContain("alex%40weallcanada.local");
+  expect(String(body.error)).toMatch(/activate/i);
+});

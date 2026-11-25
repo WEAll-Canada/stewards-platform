@@ -27,18 +27,19 @@ const torFields = (settings.tor_fields || "")
   .split("|")
   .map((s) => s.trim())
   .filter(Boolean);
+const prefillEmail = (Astro.url.searchParams.get("email") || "").trim().toLowerCase();
 ---
 <Base title="Activate your account" active="activate" user={user}>
   <h1>Activate your account</h1>
   <p class="lede">
-    Already part of WEAll Canada from the earlier platform? Set up your Stewards Platform login here —
-    a short activation, not the full new-member survey.
+    Already part of WEAll Canada? Use the email we reach you at, agree to the Living Charter, and set a
+    password. If your profile was already brought over, you get access right away.
   </p>
 
   <ul class="invite-list">
-    <li>Use the email you want for alliance sign-in going forward</li>
-    <li>An admin confirms your activation before full access</li>
-    <li>After approval you can finish your profile and join circles</li>
+    <li>Use the same email address we have on file for you</li>
+    <li>Imported members keep their existing profile and connections</li>
+    <li>If you are not in the directory yet, an admin confirms before full access</li>
   </ul>
 
   <form id="activate-form" class="stack">
@@ -48,7 +49,7 @@ const torFields = (settings.tor_fields || "")
     </label>
     <label>
       Email
-      <input type="email" name="email" autocomplete="email" required maxlength="200" placeholder="you@example.com" />
+      <input type="email" name="email" autocomplete="email" required maxlength="200" placeholder="you@example.com" value={prefillEmail} />
     </label>
     <label>
       Create a password

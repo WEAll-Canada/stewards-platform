@@ -11,6 +11,20 @@ if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
 const graph = await getNetworkGraph();
+const provinces = [...new Set(graph.nodes.map((n) => (n.regions || "").trim()).filter(Boolean))].sort((a, b) =>
+  a.localeCompare(b),
+);
+const interests = [
+  ...new Set(
+    graph.nodes.flatMap((n) =>
+      (n.interests || "")
+        .split("|")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  ),
+].sort((a, b) => a.localeCompare(b));
+
 const payload = JSON.stringify({
   viewerId: String(user.id),
   nodes: graph.nodes.map((n) => {
@@ -23,6 +37,7 @@ const payload = JSON.stringify({
       interests: (n.interests || "").split("|").filter(Boolean).slice(0, 3),
       regions: n.regions || "",
       sector: n.sector || "",
+      profileType: n.profile_type === "partner" ? "partner" : "steward",
       isMe: n.id === user.id,
     };
   }),
@@ -42,17 +57,90 @@ const payload = JSON.stringify({
   </p>
   <ConnectSubnav active="network" />
 
-  <p class="stats" aria-live="polite">
-    {graph.nodes.length} stewards · {graph.edges.length} connection{graph.edges.length === 1 ? "" : "s"}
+  <p class="stats" aria-live="polite" data-map-stats>
+    {graph.nodes.length} people · {graph.edges.length} connection{graph.edges.length === 1 ? "" : "s"}
   </p>
 
-  <div class="map-toolbar">
-    <button type="button" class="btn btn--quiet" data-map-fullscreen aria-pressed="false">
-      Full screen
-    </button>
-  </div>
-
   <div class="map-shell" data-map-root>
+    <div class="map-controls">
+      <div class="map-controls__left">
+        <button
+          type="button"
+          class="map-icon-btn"
+          data-map-filters-toggle
+          aria-expanded="false"
+          aria-controls="map-filters-panel"
+          aria-label="Open map filters"
+          title="Filters"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"></path>
+          </svg>
+        </button>
+        <div class="map-filters" id="map-filters-panel" data-map-filters hidden>
+          <div class="map-filters__section">
+            <p class="map-filters__heading">Show</p>
+            <label class="map-filters__check">
+              <input type="checkbox" name="type" value="steward" checked data-filter-type />
+              Stewards
+            </label>
+            <label class="map-filters__check">
+              <input type="checkbox" name="type" value="partner" checked data-filter-type />
+              Partners
+            </label>
+          </div>
+          <div class="map-filters__section">
+            <p class="map-filters__heading">Province / region</p>
+            <label class="map-filters__check">
+              <input type="radio" name="province" value="" checked data-filter-province />
+              All regions
+            </label>
+            {provinces.map((province) => (
+              <label class="map-filters__check">
+                <input type="radio" name="province" value={province} data-filter-province />
+                {province}
+              </label>
+            ))}
+          </div>
+          <div class="map-filters__section">
+            <p class="map-filters__heading">Highlight interest</p>
+            <label class="map-filters__check">
+              <input type="radio" name="interest" value="" checked data-filter-interest />
+              None
+            </label>
+            {interests.map((interest) => (
+              <label class="map-filters__check">
+                <input type="radio" name="interest" value={interest} data-filter-interest />
+                {interest}
+              </label>
+            ))}
+          </div>
+          <button type="button" class="btn btn--quiet map-filters__reset" data-filter-reset>Reset filters</button>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="map-icon-btn map-icon-btn--fullscreen"
+        data-map-fullscreen
+        aria-pressed="false"
+        aria-label="Full screen"
+        title="Full screen"
+      >
+        <svg class="icon-expand" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M7 14H5v5h5v-2H7v-3zm12 0h-2v3h-3v2h5v-5zM7 5h3V3H5v5h2V5zm12-2h-5v2h3v3h2V3z"
+          ></path>
+        </svg>
+        <svg class="icon-compress" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" hidden>
+          <path
+            fill="currentColor"
+            d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
+          ></path>
+        </svg>
+      </button>
+    </div>
+
     <svg class="network-map" role="img" aria-label="Steward network map" data-map-svg></svg>
     <aside class="map-panel" data-panel hidden>
       <div class="map-panel__identity">
@@ -74,6 +162,7 @@ const payload = JSON.stringify({
 
   <div class="legend">
     <span><i class="swatch swatch--you"></i> You</span>
+    <span><i class="swatch swatch--highlight"></i> Highlighted interest</span>
     {CONNECTION_REASON_LEGEND.map((item) => (
       <span><i class="swatch" style={`background:${item.color}`}></i> {item.label}</span>
     ))}
@@ -92,12 +181,6 @@ const payload = JSON.stringify({
     color: var(--color-muted);
     font-size: var(--text-sm);
     margin: 0 0 var(--space-3);
-  }
-
-  .map-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    margin: 0 0 var(--space-2);
   }
 
   .map-shell {
@@ -121,6 +204,93 @@ const payload = JSON.stringify({
     height: 100%;
   }
 
+  .map-controls {
+    position: absolute;
+    inset: var(--space-3) var(--space-3) auto;
+    z-index: 3;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  .map-controls__left,
+  .map-icon-btn {
+    pointer-events: auto;
+  }
+
+  .map-controls__left {
+    position: relative;
+  }
+
+  .map-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-subtle);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
+  }
+
+  .map-icon-btn:hover,
+  .map-icon-btn[aria-expanded="true"],
+  .map-icon-btn[aria-pressed="true"] {
+    background: var(--color-surface-subtle);
+  }
+
+  .map-filters {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    width: min(18rem, calc(100vw - 3rem));
+    max-height: min(28rem, 70vh);
+    overflow: auto;
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    padding: var(--space-3);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .map-filters[hidden] {
+    display: none;
+  }
+
+  .map-filters__heading {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .map-filters__section {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .map-filters__check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-ink-soft);
+    cursor: pointer;
+  }
+
+  .map-filters__reset {
+    justify-self: start;
+  }
+
   .network-map {
     width: 100%;
     height: min(70vh, 36rem);
@@ -136,7 +306,7 @@ const payload = JSON.stringify({
   .map-panel {
     position: absolute;
     right: var(--space-4);
-    top: var(--space-4);
+    top: calc(var(--space-4) + 2.6rem);
     width: min(18rem, calc(100% - 2rem));
     background: var(--color-surface);
     border: 1px solid var(--color-surface-subtle);
@@ -229,6 +399,14 @@ const payload = JSON.stringify({
     background: #fdda24;
     outline: 2px solid #000;
   }
+
+  .swatch--highlight {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: #00a9e0;
+    outline: 2px solid #0c4da2;
+  }
 </style>
 
 <script>
@@ -252,14 +430,24 @@ const payload = JSON.stringify({
   };
 
   type EdgeEl = { source: string; target: string; el: SVGPathElement };
-  type NodeEl = { id: string; el: SVGGElement };
+  type NodeEl = { id: string; el: SVGGElement; halo: SVGCircleElement };
+
+  type FilterState = {
+    types: Set<string>;
+    province: string;
+    interest: string;
+  };
 
   const raw = document.getElementById("network-data")?.textContent ?? "{}";
   const data = JSON.parse(raw) as GraphPayload;
   const root = document.querySelector<HTMLElement>("[data-map-root]");
   const svg = document.querySelector<SVGSVGElement>("[data-map-svg]");
   const panel = document.querySelector<HTMLElement>("[data-panel]");
+  const statsEl = document.querySelector<HTMLElement>("[data-map-stats]");
   const fullscreenBtn = document.querySelector<HTMLButtonElement>("[data-map-fullscreen]");
+  const filtersToggle = document.querySelector<HTMLButtonElement>("[data-map-filters-toggle]");
+  const filtersPanel = document.querySelector<HTMLElement>("[data-map-filters]");
+  const resetBtn = document.querySelector<HTMLButtonElement>("[data-filter-reset]");
   if (!root || !svg || !panel) throw new Error("Network map missing root elements");
 
   const panelName = panel.querySelector("[data-panel-name]")!;
@@ -282,6 +470,12 @@ const payload = JSON.stringify({
   let hoveredId: string | null = null;
   let edgeEls: EdgeEl[] = [];
   let nodeEls: NodeEl[] = [];
+  let visibleIds = new Set(data.nodes.map((n) => n.id));
+  let filters: FilterState = {
+    types: new Set(["steward", "partner"]),
+    province: "",
+    interest: "",
+  };
 
   const viewport = document.createElementNS(ns, "g");
   viewport.setAttribute("data-viewport", "true");
@@ -301,11 +495,34 @@ const payload = JSON.stringify({
     viewport.setAttribute("transform", `translate(${view.x} ${view.y}) scale(${view.k})`);
   }
 
+  function readFilters(): FilterState {
+    const types = new Set(
+      [...document.querySelectorAll<HTMLInputElement>("[data-filter-type]:checked")].map((el) => el.value),
+    );
+    const province =
+      document.querySelector<HTMLInputElement>("[data-filter-province]:checked")?.value ?? "";
+    const interest =
+      document.querySelector<HTMLInputElement>("[data-filter-interest]:checked")?.value ?? "";
+    return { types, province, interest };
+  }
+
+  function nodePassesFilters(node: MapNode, state: FilterState) {
+    if (!state.types.has(node.profileType || "steward")) return false;
+    if (state.province && node.regions !== state.province) return false;
+    return true;
+  }
+
+  function computeVisible(state: FilterState) {
+    return new Set(data.nodes.filter((n) => nodePassesFilters(n, state)).map((n) => n.id));
+  }
+
   function spotlightSet() {
     if (!hoveredId && !selectedId) return null;
     const focus = hoveredId ?? selectedId!;
+    if (!visibleIds.has(focus)) return null;
     const neighbors = new Set<string>([focus]);
     for (const edge of data.edges) {
+      if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
       if (edge.source === focus) neighbors.add(edge.target);
       if (edge.target === focus) neighbors.add(edge.source);
     }
@@ -315,20 +532,69 @@ const payload = JSON.stringify({
   function applySpotlight() {
     const spotlight = spotlightSet();
     for (const edge of edgeEls) {
+      const bothVisible = visibleIds.has(edge.source) && visibleIds.has(edge.target);
+      if (!bothVisible) {
+        edge.el.setAttribute("stroke-opacity", "0");
+        continue;
+      }
       const dim = spotlight && !(spotlight.has(edge.source) && spotlight.has(edge.target));
       edge.el.setAttribute("stroke-opacity", dim ? "0.12" : "0.85");
     }
     for (const node of nodeEls) {
-      const dim = spotlight && !spotlight.has(node.id);
-      node.el.setAttribute("opacity", dim ? "0.22" : "1");
+      if (!visibleIds.has(node.id)) {
+        node.el.setAttribute("opacity", "0");
+        node.el.style.pointerEvents = "none";
+        continue;
+      }
+      node.el.style.pointerEvents = "auto";
+      const source = data.nodes.find((n) => n.id === node.id);
+      const highlighted = Boolean(filters.interest && source?.interests.includes(filters.interest));
+      if (highlighted) {
+        node.halo.setAttribute("stroke", "#0c4da2");
+        node.halo.setAttribute("stroke-width", "3.5");
+        node.halo.setAttribute("fill", "#e0f4fb");
+      } else if (source?.isMe) {
+        node.halo.setAttribute("stroke", "#000");
+        node.halo.setAttribute("stroke-width", "3");
+        node.halo.setAttribute("fill", "#fff");
+      } else {
+        node.halo.setAttribute("stroke", "#e2e8f0");
+        node.halo.setAttribute("stroke-width", "1.5");
+        node.halo.setAttribute("fill", "#fff");
+      }
+      const dimBySpotlight = spotlight && !spotlight.has(node.id);
+      const dimByInterest = Boolean(filters.interest && !highlighted && !source?.isMe);
+      node.el.setAttribute("opacity", dimBySpotlight || dimByInterest ? "0.22" : "1");
     }
+  }
+
+  function updateStats() {
+    if (!statsEl) return;
+    const visibleEdges = data.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target)).length;
+    statsEl.textContent = `${visibleIds.size} people · ${visibleEdges} connection${visibleEdges === 1 ? "" : "s"}`;
+  }
+
+  function applyFilters(relayoutNeeded = false) {
+    filters = readFilters();
+    visibleIds = computeVisible(filters);
+    if (selectedId && !visibleIds.has(selectedId)) {
+      selectedId = null;
+      panel.hidden = true;
+    }
+    updateStats();
+    if (relayoutNeeded) {
+      relayout();
+      return;
+    }
+    applySpotlight();
   }
 
   function openPanel(node: SimNode) {
     selectedId = node.id;
     panel.hidden = false;
     panelName.textContent = node.name;
-    panelMeta.textContent = [node.regions, node.sector].filter(Boolean).join(" · ") || "Steward";
+    const typeLabel = node.profileType === "partner" ? "Partner" : "Steward";
+    panelMeta.textContent = [typeLabel, node.regions, node.sector].filter(Boolean).join(" · ") || typeLabel;
     panelAvatar.src = node.avatarSrc;
     panelAvatar.alt = node.name;
     panelTags.replaceChildren();
@@ -428,7 +694,7 @@ const payload = JSON.stringify({
       });
 
       nodeLayer.appendChild(g);
-      nodeEls.push({ id: node.id, el: g });
+      nodeEls.push({ id: node.id, el: g, halo });
     }
 
     applySpotlight();
@@ -437,19 +703,24 @@ const payload = JSON.stringify({
   function relayout() {
     width = Math.max(root.clientWidth || 900, 320);
     height = Math.max(Math.min(width * 0.65, 560), 380);
+    if (document.fullscreenElement === root) {
+      height = Math.max(root.clientHeight || height, 380);
+    }
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("width", String(width));
     svg.setAttribute("height", String(height));
     panRect.setAttribute("width", String(width));
     panRect.setAttribute("height", String(height));
-    nodes = createSimNodes(data.nodes, data.edges, width, height, config);
-    settleLayout(nodes, data.edges, width, height, config);
+    const layoutNodes = data.nodes.filter((n) => visibleIds.has(n.id));
+    const layoutEdges = data.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
+    nodes = createSimNodes(layoutNodes, layoutEdges, width, height, config);
+    settleLayout(nodes, layoutEdges, width, height, config);
     view = { x: 0, y: 0, k: 1 };
     buildGraph();
     applyView();
   }
 
-  relayout();
+  applyFilters(true);
   window.addEventListener("resize", relayout);
 
   const pan = { active: false, startX: 0, startY: 0, originX: 0, originY: 0 };
@@ -497,7 +768,6 @@ const payload = JSON.stringify({
       const my = event.clientY - rect.top;
       const scaleFactor = wheelZoomFactor(event.deltaY);
       const nextK = Math.min(2.8, Math.max(0.35, view.k * scaleFactor));
-      // Festival wheel zoom formula
       view = {
         k: nextK,
         x: mx - ((mx - view.x) * nextK) / view.k,
@@ -514,11 +784,16 @@ const payload = JSON.stringify({
     applySpotlight();
   });
 
-  function syncFullscreenLabel() {
+  function syncFullscreenChrome() {
     if (!fullscreenBtn) return;
     const on = document.fullscreenElement === root;
-    fullscreenBtn.textContent = on ? "Exit full screen" : "Full screen";
     fullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    fullscreenBtn.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+    fullscreenBtn.title = on ? "Exit full screen" : "Full screen";
+    const expand = fullscreenBtn.querySelector<SVGElement>(".icon-expand");
+    const compress = fullscreenBtn.querySelector<SVGElement>(".icon-compress");
+    if (expand) expand.hidden = on;
+    if (compress) compress.hidden = !on;
   }
 
   fullscreenBtn?.addEventListener("click", async () => {
@@ -534,7 +809,50 @@ const payload = JSON.stringify({
   });
 
   document.addEventListener("fullscreenchange", () => {
-    syncFullscreenLabel();
+    syncFullscreenChrome();
     relayout();
+  });
+
+  filtersToggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!filtersPanel || !filtersToggle) return;
+    const open = filtersPanel.hidden;
+    filtersPanel.hidden = !open;
+    filtersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    filtersToggle.setAttribute("aria-label", open ? "Close map filters" : "Open map filters");
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!filtersPanel || !filtersToggle || filtersPanel.hidden) return;
+    const target = event.target as Node;
+    if (filtersPanel.contains(target) || filtersToggle.contains(target)) return;
+    filtersPanel.hidden = true;
+    filtersToggle.setAttribute("aria-expanded", "false");
+    filtersToggle.setAttribute("aria-label", "Open map filters");
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !filtersPanel || !filtersToggle || filtersPanel.hidden) return;
+    filtersPanel.hidden = true;
+    filtersToggle.setAttribute("aria-expanded", "false");
+    filtersToggle.setAttribute("aria-label", "Open map filters");
+  });
+
+  document.querySelectorAll<HTMLInputElement>("[data-filter-type], [data-filter-province]").forEach((el) => {
+    el.addEventListener("change", () => applyFilters(true));
+  });
+  document.querySelectorAll<HTMLInputElement>("[data-filter-interest]").forEach((el) => {
+    el.addEventListener("change", () => applyFilters(false));
+  });
+
+  resetBtn?.addEventListener("click", () => {
+    document.querySelectorAll<HTMLInputElement>("[data-filter-type]").forEach((el) => {
+      el.checked = true;
+    });
+    const allProvince = document.querySelector<HTMLInputElement>('[data-filter-province][value=""]');
+    if (allProvince) allProvince.checked = true;
+    const noInterest = document.querySelector<HTMLInputElement>('[data-filter-interest][value=""]');
+    if (noInterest) noInterest.checked = true;
+    applyFilters(true);
   });
 </script>

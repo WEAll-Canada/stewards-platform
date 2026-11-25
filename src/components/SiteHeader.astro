@@ -168,19 +168,33 @@ const accountLabel = user?.display_name || user?.email || "Account";
     position: relative;
   }
 
+  /* Invisible hover bridge so the pointer can travel from the trigger into the panel
+     without crossing empty space that would close the menu. */
   .nav-flyout__panel {
     position: absolute;
     left: 0;
-    top: calc(100% + 0.35rem);
+    top: 100%;
     min-width: 13rem;
+    padding: calc(0.35rem + var(--space-2)) var(--space-2) var(--space-2);
+    margin: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    z-index: 40;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .nav-flyout__panel::before {
+    content: "";
+    position: absolute;
+    inset: 0.35rem 0 0;
     background: var(--color-surface);
     border: 1px solid var(--color-surface-subtle);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-soft);
-    padding: var(--space-2);
-    z-index: 40;
-    display: grid;
-    gap: 0.15rem;
+    z-index: -1;
   }
 
   .nav-flyout__panel[hidden] {
@@ -336,19 +350,33 @@ const accountLabel = user?.display_name || user?.email || "Account";
     const trigger = root.querySelector<HTMLAnchorElement>(triggerSelector);
     const panel = root.querySelector<HTMLElement>(panelSelector);
     if (!trigger || !panel) return;
+    let closeTimer: number | undefined;
+    const cancelClose = () => {
+      if (closeTimer !== undefined) {
+        window.clearTimeout(closeTimer);
+        closeTimer = undefined;
+      }
+    };
     const close = () => {
+      cancelClose();
       panel.hidden = true;
       trigger.setAttribute("aria-expanded", "false");
     };
+    const scheduleClose = () => {
+      cancelClose();
+      // Short grace period so a slow diagonal move still lands on the submenu.
+      closeTimer = window.setTimeout(close, 220);
+    };
     const open = () => {
+      cancelClose();
       panel.hidden = false;
       trigger.setAttribute("aria-expanded", "true");
     };
     root.addEventListener("mouseenter", open);
-    root.addEventListener("mouseleave", close);
+    root.addEventListener("mouseleave", scheduleClose);
     root.addEventListener("focusin", open);
     root.addEventListener("focusout", (event) => {
-      if (!root.contains(event.relatedTarget as Node | null)) close();
+      if (!root.contains(event.relatedTarget as Node | null)) scheduleClose();
     });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") close();

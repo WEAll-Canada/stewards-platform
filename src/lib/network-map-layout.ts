@@ -16,6 +16,7 @@ export type MapNode = {
   interests: string[];
   regions: string;
   sector: string;
+  profileType: "steward" | "partner" | string;
   isMe: boolean;
 };
 

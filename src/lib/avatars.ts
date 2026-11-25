@@ -61,5 +61,5 @@ export function normalizeAvatarInput(value: string): { ok: true; value: string }
     }
     return { ok: true, value: raw };
   }
-  return { ok: false, error: "Use a preset or a small JPEG/WebP thumbnail." };
+  return { ok: false, error: "Upload a small JPEG or WebP thumbnail." };
 }

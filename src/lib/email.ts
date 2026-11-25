@@ -17,7 +17,7 @@ export async function sendEmail(input: {
   from?: string;
 }): Promise<SendResult> {
   const apiKey = String(env.RESEND_API_KEY ?? "");
-  const from = input.from || String(env.EMAIL_FROM ?? "WeAll Canada <hello@weallcanada.com>");
+  const from = input.from || String(env.EMAIL_FROM ?? "WeAll Canada <contact@weallcanada.org>");
   const to = Array.isArray(input.to) ? input.to : [input.to];
 
   if (!apiKey) {

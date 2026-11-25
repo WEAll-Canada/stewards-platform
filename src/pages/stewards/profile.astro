@@ -1,7 +1,6 @@
 ---
-import StewardAvatar from "../../components/StewardAvatar.astro";
 import Base from "../../layouts/Base.astro";
-import { AVATAR_PRESETS, resolveAvatarSrc } from "../../lib/avatars";
+import { resolveAvatarSrc } from "../../lib/avatars";
 import { currentUser } from "../../lib/auth";
 import { getProfileBundle, getSiteSettings, getSurveyLabels } from "../../lib/db";
 import {
@@ -72,21 +71,6 @@ const aboutPrompt = aboutSettings.about_prompt || DEFAULT_ABOUT.prompt;
               Upload photo
               <input id="avatar-file" type="file" accept="image/*" hidden />
             </label>
-            <fieldset class="avatar-presets">
-              <legend>Or use a prepared thumbnail</legend>
-              <div class="avatar-presets__grid">
-                {AVATAR_PRESETS.map((p) => (
-                  <button
-                    type="button"
-                    class:list={["avatar-preset", { "is-selected": profile.avatar_url === `preset:${p.id}` }]}
-                    data-preset={`preset:${p.id}`}
-                    aria-label={p.label}
-                  >
-                    <StewardAvatar name={p.label} avatarUrl={`preset:${p.id}`} />
-                  </button>
-                ))}
-              </div>
-            </fieldset>
           </div>
         </div>
 
@@ -313,31 +297,6 @@ const aboutPrompt = aboutSettings.about_prompt || DEFAULT_ABOUT.prompt;
     margin: var(--space-2) 0 var(--space-3);
     cursor: pointer;
   }
-
-  .avatar-presets {
-    border: 1px solid var(--color-surface-subtle);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
-  }
-
-  .avatar-presets__grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
-  .avatar-preset {
-    border: 2px solid transparent;
-    border-radius: 50%;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .avatar-preset.is-selected,
-  .avatar-preset:hover {
-    border-color: var(--color-cyan);
-  }
 </style>
 
 <script>
@@ -404,17 +363,6 @@ const aboutPrompt = aboutSettings.about_prompt || DEFAULT_ABOUT.prompt;
     const preview = profileForm.querySelector<HTMLImageElement>("#avatar-preview");
     const fileInput = profileForm.querySelector<HTMLInputElement>("#avatar-file");
 
-    profileForm.querySelectorAll<HTMLButtonElement>(".avatar-preset").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const value = btn.dataset.preset ?? "";
-        if (avatarInput) avatarInput.value = value;
-        const img = btn.querySelector("img");
-        if (preview && img) preview.src = img.src;
-        profileForm.querySelectorAll(".avatar-preset").forEach((el) => el.classList.remove("is-selected"));
-        btn.classList.add("is-selected");
-      });
-    });
-
     fileInput?.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
       if (!file || !avatarInput || !preview) return;
@@ -436,7 +384,6 @@ const aboutPrompt = aboutSettings.about_prompt || DEFAULT_ABOUT.prompt;
       }
       avatarInput.value = dataUrl;
       preview.src = dataUrl;
-      profileForm.querySelectorAll(".avatar-preset").forEach((el) => el.classList.remove("is-selected"));
     });
   }
 

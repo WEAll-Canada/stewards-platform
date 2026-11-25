@@ -52,18 +52,21 @@ Do not overwrite [PRD.md](PRD.md). Ship features behind the existing staging →
 **Exit check:** Phase A steward-management acceptance items in STEWARD_PRD mostly checked on staging.  
 **Status (2026-11-11):** Apply → approve → dashboard/directory/profile; circles join+approve; connections+DMs; email inbox/reply/campaigns (simulate without Resend); events+RSVP; FAQ. Google OAuth + live Resend still pending tech-steward secrets.
 
+**Email ops status (2026-11-24):** Provider is Resend. DNS + Ethical Host forwarders done for send domain `weallcanada.org` (Receiving off) and receive domain `mail.weallcanada.org` (Receiving on). Public/website address `contact@weallcanada.org`; human `hello@weallcanada.org` remains Ethical Host/Gmail and also forwards into Resend. Secrets + inbound webhook + Settings/stagger still open. Full runbook: [EMAIL_SETUP.md](EMAIL_SETUP.md).
+
 ## Phase 2 — Email (weeks 3–6, overlaps Phase 1)
 
 **Outcome:** Admins/leads can work an inbox and send a small confirmed campaign.
 
 | Work | Owner |
 | --- | --- |
-| Choose email provider; set domain DNS + secrets | Tech steward (ask before paid tier) |
-| Migrations: threads, messages, campaigns, recipients | Agent |
-| Inbound webhook + signature verify | Agent |
-| Inbox UI (clustered threads, who replied) | Agent |
-| Reply send path | Agent |
-| Campaign MVP: segment, template, preview, test send, confirm N | Agent |
+| Choose email provider; set domain DNS + secrets | Tech steward — **DNS/forwarders done 2026-11-24**; staging/prod `RESEND_API_KEY` + `EMAIL_FROM` still open |
+| Migrations: threads, messages, campaigns, recipients | Agent — done (simulate path) |
+| Inbound webhook + signature verify | Agent — **next** |
+| Inbox UI (clustered threads, who replied) | Agent — UI exists; live inbound pending webhook |
+| Reply send path | Agent — done (simulate / Resend when keyed) |
+| Campaign MVP: segment, template, preview, test send, confirm N | Agent — done (simulate / Resend when keyed) |
+| Settings tab: Resend usage/limits + staggered blasts | Agent — planned (free tier) |
 | Basic send/delivery stats from provider webhooks | Agent |
 | Permission tests: steward cannot open admin inbox | Agent |
 

@@ -58,6 +58,9 @@ test("account menu opens profile and settings tabs on one page", async ({ reques
   const profileHtml = await profile.text();
   expect(profileHtml).toContain('aria-selected="true"');
   expect(profileHtml).toContain("Save profile");
+  expect(profileHtml).toContain("Upload photo");
+  expect(profileHtml).not.toContain("prepared thumbnail");
+  expect(profileHtml).not.toContain("avatar-presets");
 
   const settings = await request.get("/stewards/profile?tab=settings", { headers: { cookie } });
   expect(settings.status()).toBe(200);
@@ -153,10 +156,19 @@ test("circles nav lists memberships and circle detail pages open", async ({ requ
   expect(html).toContain("Events today");
   expect(html).toContain("Upcoming");
 
+  const allCircles = await request.get("/stewards/circles", { headers: { cookie } });
+  expect(allCircles.status()).toBe(200);
+  const allHtml = await allCircles.text();
+  expect(allHtml).toContain("All circles");
+  expect(allHtml).toContain("Circles map");
+  expect(allHtml).toContain("circle-map-data");
+  expect(allHtml).toContain("Official link");
+
   const circle = await request.get("/stewards/circles/central", { headers: { cookie } });
   expect(circle.status()).toBe(200);
   const circleHtml = await circle.text();
   expect(circleHtml).toContain("Central Circle");
+  expect(circleHtml).toContain('id="tab-circles-central"');
   expect(circleHtml).toContain("Members");
   expect(circleHtml).toContain("Decision log");
   expect(circleHtml).toContain("Central Circle charter draft");
@@ -565,6 +577,24 @@ test("admin can edit profile questions, agreement, and see activity", async ({ r
   expect(actHtml).toMatch(/settings|survey|Updated settings/i);
 });
 
+test("demo network seed includes stewards, partners, and connections", async ({ request }) => {
+  const cookie = await login(request, "alex@weallcanada.local");
+  const network = await request.get("/stewards/network", { headers: { cookie } });
+  expect(network.status()).toBe(200);
+  const html = await network.text();
+  const dataMatch = html.match(/<script id="network-data"[^>]*>([\s\S]*?)<\/script>/);
+  expect(dataMatch?.[1]).toBeTruthy();
+  const graph = JSON.parse(dataMatch![1]);
+  const stewards = graph.nodes.filter((n: { profileType: string }) => n.profileType === "steward");
+  const partners = graph.nodes.filter((n: { profileType: string }) => n.profileType === "partner");
+  expect(stewards.length).toBeGreaterThanOrEqual(20);
+  expect(partners.length).toBeGreaterThanOrEqual(15);
+  expect(graph.edges.length).toBeGreaterThanOrEqual(20);
+  expect(html).toContain("Ontario");
+  expect(html).toContain("Maya Chen");
+  expect(html).toContain("Green Futures Collective");
+});
+
 test("dashboard shows bento panels for messages, commons, and events", async ({ request }) => {
   const cookie = await login(request, "alex@weallcanada.local");
   const page = await request.get("/stewards/dashboard", { headers: { cookie } });
@@ -592,8 +622,8 @@ test("interest matching finds stewards by topic and network map renders", async 
   const climateHtml = await climate.text();
   expect(climateHtml).toMatch(/match/i);
   expect(climateHtml).toContain("Climate");
-  // Seeded directory stewards include Climate interest (e.g. Alex excluded as viewer; Priya/admin may match).
-  expect(climateHtml).toMatch(/Priya Nair|Platform Admin|Kai Chen|Jordan Lee/);
+  // Seeded directory stewards include Climate interest (Alex excluded as viewer; Admin matches).
+  expect(climateHtml).toMatch(/Platform Admin|Imported Steward/);
 
   const network = await request.get("/stewards/network", { headers: { cookie } });
   expect(network.status()).toBe(200);
@@ -603,6 +633,13 @@ test("interest matching finds stewards by topic and network map renders", async 
   expect(networkHtml).toContain('"edges"');
   expect(networkHtml).toContain('"nodes"');
   expect(networkHtml).toContain("data-map-fullscreen");
+  expect(networkHtml).toContain("data-map-filters-toggle");
+  expect(networkHtml).toContain("data-map-filters");
+  expect(networkHtml).toContain("data-filter-province");
+  expect(networkHtml).toContain("data-filter-type");
+  expect(networkHtml).toContain("data-filter-interest");
+  expect(networkHtml).toContain('"profileType"');
+  expect(networkHtml).not.toMatch(/>\s*Full screen\s*</);
 });
 
 test("dashboard and connect first-pass feedback", async ({ request }) => {
@@ -630,20 +667,44 @@ test("dashboard and connect first-pass feedback", async ({ request }) => {
   expect(dirHtml).toContain("Share connection");
   expect(dirHtml).toContain("Update connection");
   expect(dirHtml).toContain("dir-card__bio");
-  // Directory lives under Connect in the header flyout.
+  // Directory lives under Connect in the header flyout (hover bridge, no dead gap).
   expect(dirHtml).toMatch(/data-connect-panel[\s\S]*href="\/stewards\/directory"/);
+  expect(dirHtml).toContain("nav-flyout__panel");
 
-  // Among seeded stewards, newer joins appear before older ones (Priya > Jordan > Alex > Admin).
+  // Among seeded stewards, newer joins appear before older ones (Imported > Alex > Admin).
   const cardNames = [...dirHtml.matchAll(/dir-card"[^>]*data-name="([^"]+)"/g)].map((m) => m[1]);
-  const priya = cardNames.indexOf("Priya Nair");
-  const jordan = cardNames.indexOf("Jordan Lee");
-  const alex = cardNames.indexOf("Alex Steward");
+  const imported = cardNames.indexOf("Imported Steward");
+  const alex = cardNames.findIndex((n) => n.startsWith("Alex Steward"));
   const admin = cardNames.indexOf("Platform Admin");
-  expect(priya).toBeGreaterThan(-1);
-  expect(jordan).toBeGreaterThan(-1);
+  expect(imported).toBeGreaterThan(-1);
   expect(alex).toBeGreaterThan(-1);
   expect(admin).toBeGreaterThan(-1);
-  expect(priya).toBeLessThan(jordan);
-  expect(jordan).toBeLessThan(alex);
+  expect(imported).toBeLessThan(alex);
   expect(alex).toBeLessThan(admin);
+});
+
+test("circle map page embeds graph data and official link nomination works", async ({ request }) => {
+  const adminCookie = await login(request, "admin@weallcanada.local");
+  const page = await request.get("/stewards/circles", { headers: { cookie: adminCookie } });
+  expect(page.status()).toBe(200);
+  const html = await page.text();
+  expect(html).toContain('id="circle-map-data"');
+  expect(html).toContain("Circles map");
+  expect(html).toContain("data-circle-map-svg");
+
+  // Admin is lead of Central and member of Policy — can assign an official link for Alex (in both Central + Knowledge).
+  const nominate = await request.post("/api/circles/links", {
+    headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { action: "nominate", userId: 3, circleAId: 1, circleBId: 2 },
+  });
+  // 200 if newly set/refreshed, 400 if already active from seed
+  expect([200, 400]).toContain(nominate.status());
+
+  // Maya is in Central + Knowledge — self-nominate (may already be active from seed).
+  const mayaCookie = await login(request, "maya@demo.weall.local");
+  const selfNom = await request.post("/api/circles/links", {
+    headers: { cookie: mayaCookie, "Content-Type": "application/json", ...asVisitor() },
+    data: { action: "nominate", circleAId: 1, circleBId: 2 },
+  });
+  expect([200, 400]).toContain(selfNom.status());
 });

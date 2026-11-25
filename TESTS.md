@@ -42,3 +42,10 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Circle leads/admins can edit circle page details and manage member/lead roles; non-leads are redirected away from edit. (tests/stewards-platform.spec.ts)
 - [auto] Admin can edit profile questions and Living Charter/ToR; join page shows the updated agreement; activity trail records settings changes. (tests/stewards-platform.spec.ts)
 - [auto] Dashboard bento shows messages, commons, and events panels. (tests/stewards-platform.spec.ts)
+- [auto] Pre-imported steward can activate (claim password) and reach the dashboard. (tests/stewards-auth.spec.ts)
+- [auto] Apply with an existing email redirects to Activate. (tests/stewards-auth.spec.ts)
+- [auto] Profile photo editor offers upload only (no prepared thumbnail presets). (tests/stewards-platform.spec.ts)
+- [auto] Network map has a hamburger filter menu (province, steward/partner, interest highlight) and an icon fullscreen control. (tests/stewards-platform.spec.ts)
+- [auto] Local preview seeds a demo network with stewards, partners, and connections visible on the map. (tests/stewards-platform.spec.ts)
+- [manual] Dashboard sections use even spacing (one gap between panels; Events today / Upcoming share the same inner gap; Commons is full-width).
+- [auto] Circles page has All circles tabs, embeds a circles map, and supports official link nomination. (tests/stewards-platform.spec.ts)

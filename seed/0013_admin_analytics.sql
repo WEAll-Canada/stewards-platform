@@ -9,6 +9,6 @@ INSERT INTO page_views (path, user_id, created_at) VALUES
   ('/stewards/circles', 3, '2026-11-08T12:00:00Z'),
   ('/stewards/messages', 1, '2026-11-09T12:00:00Z'),
   ('/stewards/faq', 3, '2026-11-10T12:00:00Z'),
-  ('/stewards/directory', 901, '2026-11-11T12:00:00Z'),
-  ('/stewards/dashboard', 902, '2026-11-12T12:00:00Z'),
-  ('/stewards/connect', 903, '2026-11-13T10:00:00Z');
+  ('/stewards/directory', 1, '2026-11-11T12:00:00Z'),
+  ('/stewards/dashboard', 3, '2026-11-12T12:00:00Z'),
+  ('/stewards/connect', 1, '2026-11-13T10:00:00Z');

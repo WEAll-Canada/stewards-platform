@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { hashPassword, startSession } from "../../lib/auth";
-import { createApplicant, findUserByEmail } from "../../lib/db";
+import { claimImportedSteward, createApplicant, findUserByEmail } from "../../lib/db";
 import { checkSubmission } from "../../lib/protect";
 
 const MAX_NAME = 100;
@@ -47,15 +47,43 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   if (password.length < 8) {
     return Response.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
-  if (await findUserByEmail(email)) {
-    return Response.json({ error: "An account with that email already exists. Try logging in." }, { status: 409 });
+
+  const passwordHash = await hashPassword(password);
+  const existing = await findUserByEmail(email);
+
+  if (existing) {
+    const claimed = await claimImportedSteward({
+      email,
+      passwordHash,
+      displayName: name,
+    });
+    if (!claimed.ok) {
+      if (claimed.reason === "already_set") {
+        return Response.json(
+          { error: "An account with that email already has a password. Try logging in." },
+          { status: 409 },
+        );
+      }
+      if (claimed.reason === "disabled") {
+        return Response.json({ error: "This account is disabled." }, { status: 403 });
+      }
+      return Response.json({ error: "Could not activate that account." }, { status: 400 });
+    }
+
+    const session = await startSession(claimed.userId, request);
+    return new Response(JSON.stringify({ ok: true, redirect: "/stewards/dashboard", claimed: true }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": session.header,
+      },
+    });
   }
 
   const about =
     note ||
     "Migrating steward activating an existing WEAll Canada relationship on the new platform.";
 
-  const passwordHash = await hashPassword(password);
   const { userId, applicationId } = await createApplicant({
     email,
     passwordHash,

@@ -1,5 +1,6 @@
 ---
 import Base from "../../../layouts/Base.astro";
+import CirclesSubnav from "../../../components/CirclesSubnav.astro";
 import WeAllCircle from "../../../components/WeAllCircle.astro";
 import { currentUser, hasRole } from "../../../lib/auth";
 import {
@@ -8,6 +9,7 @@ import {
   listCircleMembers,
   listCircleResources,
   listEventsForUser,
+  listUserCircles,
 } from "../../../lib/db";
 
 const user = await currentUser(Astro.request);
@@ -18,6 +20,7 @@ const slug = Astro.params.slug ?? "";
 const circle = await getCircleBySlug(slug, user.id);
 if (!circle) return Astro.redirect("/stewards/circles");
 
+const myCircles = await listUserCircles(user.id);
 const members = await listCircleMembers(circle.id);
 const resources = await listCircleResources(circle.id);
 const decisions = await listCircleDecisions(circle.id);
@@ -32,7 +35,7 @@ const variant = (["central", "knowledge", "policy", "liberating", "grassroots"].
   : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
 ---
 <Base title={circle.name} active="circles" user={user}>
-  <p class="crumb"><a href="/stewards/circles">Circles</a> / {circle.name}</p>
+  <CirclesSubnav active={circle.slug} myCircles={myCircles} />
 
   <header class="circle-hero">
     <WeAllCircle variant={variant} size={64} animate={true} />

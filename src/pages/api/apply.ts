@@ -71,7 +71,14 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return Response.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
   if (await findUserByEmail(email)) {
-    return Response.json({ error: "An account with that email already exists. Try logging in." }, { status: 409 });
+    return Response.json(
+      {
+        error:
+          "An account with that email already exists. Activate your account to set a password, or log in if you already have one.",
+        redirect: `/stewards/activate?email=${encodeURIComponent(email)}`,
+      },
+      { status: 409 },
+    );
   }
 
   const passwordHash = await hashPassword(password);

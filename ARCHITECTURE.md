@@ -2,7 +2,7 @@
 
 Nov 11, 2026 · Draft — reconcile with Platform Architecture PDF/Miro when a readable export is available.
 
-Related: [STEWARD_PRD.md](STEWARD_PRD.md), [DESIGN.md](DESIGN.md), [DEV_PLAN.md](DEV_PLAN.md), template ops [PRD.md](PRD.md).
+Related: [STEWARD_PRD.md](STEWARD_PRD.md), [DESIGN.md](DESIGN.md), [DEV_PLAN.md](DEV_PLAN.md), [EMAIL_SETUP.md](EMAIL_SETUP.md), template ops [PRD.md](PRD.md).
 
 ## Context
 
@@ -45,7 +45,7 @@ Tech stewards own DNS, WordPress exclusion of `/stewards*`, and TLS.
 | App hosting | Cloudflare Workers | Free tier first |
 | Database | D1 (separate staging/prod) | Free tier; watch row reads |
 | Auth | See below | Free–low paid |
-| Transactional + broadcast email | External provider (Resend, Postmark, or similar) | Ask before enabling campaigns at volume |
+| Transactional + broadcast email | **Resend** (free tier first; see [EMAIL_SETUP.md](EMAIL_SETUP.md)) | Ask before paid tier; stagger blasts over daily cap |
 | Spam on public forms | Turnstile + `FORM_LIMITER` ([src/lib/protect.ts](src/lib/protect.ts)) | Free |
 | Knowledge Commons LLM / vectors | Later; Workers AI or external | Likely paid — ask |
 | File uploads | R2 when needed | Free tier then paid |
@@ -123,20 +123,36 @@ All SQL lives in [src/lib/db.ts](src/lib/db.ts). Schema changes = **new** migrat
 
 ## Email subsystem
 
+Ops detail (DNS, forwarders, quotas, troubleshooting): **[EMAIL_SETUP.md](EMAIL_SETUP.md)**.
+
 ```mermaid
 flowchart TB
-  provider[EmailProvider_API]
-  inbound[InboundWebhook] --> api[Workers_API]
+  sender[PublicSender] --> ethicalHost[EthicalHost_MX_weallcanada_org]
+  ethicalHost --> helloGmail[hello_Gmail]
+  ethicalHost --> fwdContact[Forward_contact_and_hello]
+  fwdContact --> resendRecv[Resend_mail.weallcanada.org]
+  resendRecv --> inbound[InboundWebhook]
+  inbound --> api[Workers_API]
   api --> d1[(D1)]
   adminUI[Admin_Lead_UI] --> api
-  api --> provider
-  provider --> stewards[Steward_Inboxes]
+  api --> resendSend[Resend_API]
+  resendSend --> recipients[Recipients]
 ```
 
-- Inbound: provider webhook → verify signature → store → cluster by thread.
-- Outbound reply / campaign: API checks role → provider send → store provider IDs for analytics.
-- Campaigns require explicit confirmation with recipient count.
-- Without provider secrets, UI shows setup state; do not silently no-op sends in production.
+### Provider split (as of 2026-11-24)
+
+| Piece | Detail |
+| --- | --- |
+| Human inbox | `hello@weallcanada.org` on Ethical Host → two Gmail accounts |
+| Website From / public contact | `contact@weallcanada.org` (send via Resend; receive via Ethical Host forwarder → Resend) |
+| Resend send domain | `weallcanada.org` — **Receiving off** |
+| Resend receive domain | `mail.weallcanada.org` — **Receiving on** (e.g. `contact@mail.weallcanada.org`) |
+| DNS | Ethical Host cPanel Zone Editor for `weallcanada.org` (subdomain rows in the same zone) |
+
+- Inbound (next build): Resend received webhook → verify signature → store → cluster by thread → Alliance Email UI.
+- Outbound reply / campaign: API checks role → Resend send as `EMAIL_FROM` (`contact@weallcanada.org`) → store provider IDs for analytics.
+- Campaigns require explicit confirmation with recipient count; free-tier blasts should stagger when over daily remaining quota.
+- Without `RESEND_API_KEY`, local/preview **simulates** sends (`src/lib/email.ts`); do not silently no-op in production.
 
 ## Application structure (this repo)
 

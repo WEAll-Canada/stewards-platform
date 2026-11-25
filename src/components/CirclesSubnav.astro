@@ -1,0 +1,61 @@
+---
+interface Tab {
+  href: string;
+  label: string;
+  id: string;
+}
+
+interface Props {
+  active: string;
+  myCircles: { slug: string; name: string }[];
+}
+
+const { active, myCircles } = Astro.props;
+
+const tabs: Tab[] = [
+  { href: "/stewards/circles", label: "All circles", id: "all" },
+  ...myCircles.map((c) => ({
+    href: `/stewards/circles/${c.slug}`,
+    label: c.name,
+    id: c.slug,
+  })),
+];
+---
+<nav class="tabs" role="tablist" aria-label="Circles sections">
+  {tabs.map((tab) => (
+    <a
+      class:list={["tabs__tab", { "is-active": active === tab.id }]}
+      href={tab.href}
+      role="tab"
+      aria-selected={active === tab.id}
+      id={`tab-circles-${tab.id}`}
+    >
+      {tab.label}
+    </a>
+  ))}
+</nav>
+
+<style>
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    border-bottom: 1px solid var(--color-surface-subtle);
+    margin: var(--space-6) 0;
+  }
+
+  .tabs__tab {
+    text-decoration: none;
+    color: var(--color-muted);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+
+  .tabs__tab.is-active {
+    color: var(--color-ink);
+    border-bottom-color: var(--color-cyan);
+  }
+</style>

@@ -1,22 +1,80 @@
 ---
 import Base from "../../layouts/Base.astro";
+import CirclesSubnav from "../../components/CirclesSubnav.astro";
 import WeAllCircle from "../../components/WeAllCircle.astro";
-import { currentUser } from "../../lib/auth";
-import { listCirclesForUser } from "../../lib/db";
+import { resolveAvatarSrc } from "../../lib/avatars";
+import { currentUser, hasRole } from "../../lib/auth";
+import {
+  getCircleMapGraph,
+  listCirclesForUser,
+  listPendingCircleLinksForReview,
+  listSelfLinkCandidates,
+  listUserCircles,
+} from "../../lib/db";
 
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
 
 const circles = await listCirclesForUser(user.id);
+const myCircles = await listUserCircles(user.id);
+const graph = await getCircleMapGraph();
+const selfCandidates = await listSelfLinkCandidates(user.id);
+const pendingLinks = await listPendingCircleLinksForReview(user.id, hasRole(user, "admin"));
+
 const variant = (token: string) =>
   (["central", "knowledge", "policy", "liberating", "grassroots"].includes(token)
     ? token
     : "master") as "central" | "knowledge" | "policy" | "liberating" | "grassroots" | "master";
+
+const COLOR: Record<string, string> = {
+  central: "#050707",
+  knowledge: "#00a9e0",
+  policy: "#0c4da2",
+  liberating: "#ff8200",
+  grassroots: "#10b726",
+  master: "#00a9e0",
+};
+
+const payload = JSON.stringify({
+  viewerId: String(user.id),
+  circles: graph.circles.map((c) => ({
+    id: String(c.id),
+    slug: c.slug,
+    name: c.name,
+    color: COLOR[c.color_token] ?? COLOR.master,
+    status: c.status,
+    memberCount: c.member_count,
+    isCentral: c.slug === "central",
+  })),
+  people: graph.people.map((p) => {
+    const name = p.display_name || "Steward";
+    return {
+      userId: String(p.user_id),
+      circleId: String(p.circle_id),
+      name,
+      bio: (p.bio || "").trim(),
+      avatarSrc: resolveAvatarSrc(p.avatar_url, name),
+      role: p.role,
+      pending: Boolean(p.pending),
+      isMe: p.user_id === user.id,
+    };
+  }),
+  officialLinks: graph.officialLinks.map((l) => ({
+    userId: String(l.user_id),
+    circleAId: String(l.circle_a_id),
+    circleBId: String(l.circle_b_id),
+  })),
+});
 ---
 <Base title="Circles" active="circles" user={user}>
   <h1>Circles</h1>
-  <p class="lede">Request to join an active circle. Leads and admins approve requests.</p>
+  <p class="lede">
+    Working groups of the alliance. Browse the list, then scroll to the map to see who sits where —
+    and how people bridge circles.
+  </p>
+
+  <CirclesSubnav active="all" myCircles={myCircles} />
 
   <ul class="circle-list">
     {circles.map((c) => (
@@ -43,13 +101,119 @@ const variant = (token: string) =>
     ))}
   </ul>
   <p id="circle-status" role="status"></p>
+
+  <section class="map-section" aria-labelledby="circle-map-heading">
+    <h2 id="circle-map-heading">Circles map</h2>
+    <p class="map-lede">
+      Each bubble is a circle, sized by how many people are in it. Faces sit around the rim —
+      leads at the top, a little larger. Hover a face for a short bio. Dotted lines connect the same
+      person across circles; solid lines mark an official link role.
+    </p>
+
+    <div class="map-shell" data-circle-map-root>
+      <svg class="circle-map" role="img" aria-label="Map of stewards in circles" data-circle-map-svg></svg>
+      <aside class="bio-card" data-bio-card hidden>
+        <img data-bio-avatar alt="" width="44" height="44" />
+        <div>
+          <strong data-bio-name>—</strong>
+          <p class="meta" data-bio-meta></p>
+          <p class="bio-text" data-bio-text></p>
+        </div>
+      </aside>
+    </div>
+
+    <div class="legend">
+      <span><i class="swatch swatch--lead"></i> Circle lead</span>
+      <span><i class="swatch swatch--pending"></i> Pending join</span>
+      <span><i class="line line--dotted"></i> Same person in both</span>
+      <span><i class="line line--solid"></i> Official link</span>
+      {graph.circles.map((c) => (
+        <span>
+          <i class="swatch" style={`background:${COLOR[c.color_token] ?? COLOR.master}`}></i>
+          {c.name}
+        </span>
+      ))}
+    </div>
+  </section>
+
+  {(selfCandidates.length > 0 || pendingLinks.length > 0) && (
+    <section class="link-section" aria-labelledby="link-heading">
+      <h2 id="link-heading">Official link roles</h2>
+      <p class="map-lede">
+        An official link is a person named to bridge two specific circles. Multi-circle membership
+        always shows as a dotted line; an approved official link becomes a solid line.
+      </p>
+
+      {selfCandidates.length > 0 && (
+        <div class="link-block">
+          <h3>Offer yourself as a link</h3>
+          <ul class="link-list">
+            {selfCandidates.map((c) => (
+              <li>
+                <span>
+                  {c.circle_a_name} ↔ {c.circle_b_name}
+                  {c.pending && <span class="meta"> · pending</span>}
+                </span>
+                {c.pending ? (
+                  <span class="note">Waiting for a lead or admin</span>
+                ) : (
+                  <button
+                    type="button"
+                    class="btn btn--quiet"
+                    data-nominate-self
+                    data-a={c.circle_a_id}
+                    data-b={c.circle_b_id}
+                  >
+                    Nominate myself
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {pendingLinks.length > 0 && (
+        <div class="link-block">
+          <h3>Nominations to review</h3>
+          <ul class="link-list">
+            {pendingLinks.map((l) => (
+              <li>
+                <span>
+                  <strong>{l.display_name}</strong>
+                  {" "}· {l.circle_a_name} ↔ {l.circle_b_name}
+                </span>
+                <span class="link-actions">
+                  <button type="button" class="btn btn--accent" data-review-link data-id={l.id} data-decision="approved">
+                    Approve
+                  </button>
+                  <button type="button" class="btn btn--quiet" data-review-link data-id={l.id} data-decision="rejected">
+                    Decline
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p id="link-status" role="status"></p>
+    </section>
+  )}
+
+  <script id="circle-map-data" type="application/json" is:inline set:html={payload}></script>
 </Base>
 
 <style>
+  .lede,
+  .map-lede {
+    color: var(--color-ink-soft);
+    max-width: 44rem;
+  }
+
   .circle-list {
     list-style: none;
     padding: 0;
-    margin: var(--space-6) 0 0;
+    margin: 0;
     display: grid;
     gap: var(--space-4);
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -72,6 +236,157 @@ const variant = (token: string) =>
     color: var(--color-muted);
     font-size: var(--text-sm);
   }
+
+  .map-section,
+  .link-section {
+    margin-top: var(--space-10);
+    padding-top: var(--space-8);
+    border-top: 1px solid var(--color-surface-subtle);
+  }
+
+  .map-section h2,
+  .link-section h2 {
+    margin: 0 0 var(--space-2);
+  }
+
+  .link-block {
+    margin-top: var(--space-5);
+  }
+
+  .link-block h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-md);
+  }
+
+  .link-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .link-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .link-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .map-shell {
+    position: relative;
+    margin-top: var(--space-4);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    background:
+      radial-gradient(ellipse at 50% 42%, rgba(0, 169, 224, 0.08), transparent 55%),
+      linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
+    min-height: 28rem;
+    overflow: hidden;
+  }
+
+  .circle-map {
+    width: 100%;
+    height: min(72vh, 40rem);
+    display: block;
+    touch-action: manipulation;
+  }
+
+  .bio-card {
+    position: absolute;
+    z-index: 4;
+    width: min(17rem, calc(100% - 2rem));
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    pointer-events: none;
+  }
+
+  .bio-card[hidden] {
+    display: none;
+  }
+
+  .bio-card img {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--color-surface-subtle);
+  }
+
+  .bio-card strong {
+    display: block;
+    font-size: var(--text-md);
+  }
+
+  .bio-text {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
+    line-height: 1.4;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-4);
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-muted);
+  }
+
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .swatch {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .swatch--lead {
+    background: var(--color-surface);
+    box-shadow: 0 0 0 2px var(--color-ink);
+  }
+
+  .swatch--pending {
+    background: #94a3b8;
+    opacity: 0.45;
+  }
+
+  .line {
+    width: 1.4rem;
+    height: 0;
+    border-top: 2px solid var(--color-ink-soft);
+    display: inline-block;
+  }
+
+  .line--dotted {
+    border-top-style: dotted;
+  }
+
+  .line--solid {
+    border-top-style: solid;
+    border-top-width: 3px;
+  }
 </style>
 
 <script>
@@ -87,11 +402,479 @@ const variant = (token: string) =>
       });
       const data = await res.json();
       if (res.ok) {
-        button.replaceWith(Object.assign(document.createElement("p"), { className: "note", textContent: "Join request pending." }));
+        button.replaceWith(
+          Object.assign(document.createElement("p"), {
+            className: "note",
+            textContent: "Join request pending.",
+          }),
+        );
         status.textContent = "Request sent.";
         return;
       }
       status.textContent = data.error ?? "Something went wrong.";
     });
   });
+
+  const linkStatus = document.querySelector<HTMLParagraphElement>("#link-status");
+  document.querySelectorAll<HTMLButtonElement>("[data-nominate-self]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (linkStatus) linkStatus.textContent = "Sending nomination…";
+      const res = await fetch("/api/circles/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "nominate",
+          circleAId: Number(btn.dataset.a),
+          circleBId: Number(btn.dataset.b),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (linkStatus) {
+          linkStatus.textContent =
+            data.status === "active" ? "Official link saved." : "Nomination sent for review.";
+        }
+        btn.replaceWith(
+          Object.assign(document.createElement("span"), {
+            className: "note",
+            textContent: data.status === "active" ? "Linked" : "Pending",
+          }),
+        );
+        return;
+      }
+      if (linkStatus) linkStatus.textContent = data.error ?? "Something went wrong.";
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-review-link]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (linkStatus) linkStatus.textContent = "Updating…";
+      const res = await fetch("/api/circles/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "review",
+          linkId: Number(btn.dataset.id),
+          decision: btn.dataset.decision,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (linkStatus) {
+          linkStatus.textContent =
+            btn.dataset.decision === "approved" ? "Link approved." : "Nomination declined.";
+        }
+        btn.closest("li")?.remove();
+        return;
+      }
+      if (linkStatus) linkStatus.textContent = data.error ?? "Something went wrong.";
+    });
+  });
+
+  type MapCircle = {
+    id: string;
+    slug: string;
+    name: string;
+    color: string;
+    status: string;
+    memberCount: number;
+    isCentral: boolean;
+  };
+  type MapPerson = {
+    userId: string;
+    circleId: string;
+    name: string;
+    bio: string;
+    avatarSrc: string;
+    role: string | null;
+    pending: boolean;
+    isMe: boolean;
+  };
+  type OfficialLink = { userId: string; circleAId: string; circleBId: string };
+
+  type LayoutCircle = MapCircle & { x: number; y: number; r: number };
+  type LayoutFace = MapPerson & {
+    x: number;
+    y: number;
+    r: number;
+    key: string;
+  };
+
+  const dataEl = document.querySelector<HTMLScriptElement>("#circle-map-data");
+  const root = document.querySelector<HTMLElement>("[data-circle-map-root]");
+  const svg = document.querySelector<SVGSVGElement>("[data-circle-map-svg]");
+  const bioCard = document.querySelector<HTMLElement>("[data-bio-card]");
+  if (!dataEl || !root || !svg || !bioCard) throw new Error("Circle map markup missing.");
+
+  const data = JSON.parse(dataEl.textContent || "{}") as {
+    viewerId: string;
+    circles: MapCircle[];
+    people: MapPerson[];
+    officialLinks: OfficialLink[];
+  };
+
+  const bioAvatar = bioCard.querySelector<HTMLImageElement>("[data-bio-avatar]")!;
+  const bioName = bioCard.querySelector<HTMLElement>("[data-bio-name]")!;
+  const bioMeta = bioCard.querySelector<HTMLElement>("[data-bio-meta]")!;
+  const bioText = bioCard.querySelector<HTMLElement>("[data-bio-text]")!;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function layout(width: number, height: number) {
+    const cx = width / 2;
+    const cy = height / 2;
+    const maxR = Math.min(width, height) * 0.42;
+    const counts = data.circles.map((c) => c.memberCount);
+    const maxCount = Math.max(1, ...counts);
+    const minCount = Math.min(...counts, maxCount);
+    const sizeFor = (n: number) => {
+      const t = maxCount === minCount ? 1 : (n - minCount) / (maxCount - minCount);
+      return maxR * (0.22 + 0.28 * Math.sqrt(Math.max(0, t)));
+    };
+
+    const satellites = data.circles.filter((c) => !c.isCentral);
+    const central = data.circles.find((c) => c.isCentral);
+    const laid: LayoutCircle[] = [];
+
+    if (central) {
+      laid.push({ ...central, x: cx, y: cy, r: sizeFor(central.memberCount) });
+    }
+
+    const orbit = maxR * 0.72;
+    satellites.forEach((c, i) => {
+      const angle = -Math.PI / 2 + (i / Math.max(1, satellites.length)) * Math.PI * 2;
+      const start = satellites.length === 1 ? -Math.PI / 2 + 0.35 : angle;
+      laid.push({
+        ...c,
+        x: cx + Math.cos(start) * orbit,
+        y: cy + Math.sin(start) * orbit,
+        r: sizeFor(c.memberCount),
+      });
+    });
+
+    if (!central) {
+      laid.forEach((c, i) => {
+        const angle = -Math.PI / 2 + (i / Math.max(1, laid.length)) * Math.PI * 2;
+        c.x = cx + Math.cos(angle) * orbit * 0.55;
+        c.y = cy + Math.sin(angle) * orbit * 0.55;
+      });
+    }
+
+    const byCircle = new Map<string, MapPerson[]>();
+    for (const p of data.people) {
+      const list = byCircle.get(p.circleId) ?? [];
+      list.push(p);
+      byCircle.set(p.circleId, list);
+    }
+
+    const faces: LayoutFace[] = [];
+    for (const circle of laid) {
+      const members = (byCircle.get(circle.id) ?? []).slice().sort((a, b) => {
+        if (a.role === "lead" && b.role !== "lead") return -1;
+        if (b.role === "lead" && a.role !== "lead") return 1;
+        return a.name.localeCompare(b.name);
+      });
+      const n = members.length;
+      members.forEach((person, i) => {
+        const isLead = person.role === "lead";
+        const angle = -Math.PI / 2 + (n === 0 ? 0 : (i / n) * Math.PI * 2);
+        const faceR = isLead ? 16 : 12;
+        const rim = Math.max(circle.r - faceR - 6, circle.r * 0.55);
+        faces.push({
+          ...person,
+          key: `${person.userId}:${person.circleId}`,
+          x: circle.x + Math.cos(angle) * rim,
+          y: circle.y + Math.sin(angle) * rim,
+          r: faceR,
+        });
+      });
+    }
+
+    return { circles: laid, faces };
+  }
+
+  function clearSvg() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  }
+
+  function el<K extends keyof SVGElementTagNameMap>(
+    name: K,
+    attrs: Record<string, string | number> = {},
+  ) {
+    const node = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+    return node;
+  }
+
+  function hideBio() {
+    bioCard.hidden = true;
+  }
+
+  function showBio(face: LayoutFace, clientX: number, clientY: number) {
+    bioAvatar.src = face.avatarSrc;
+    bioAvatar.alt = "";
+    bioName.textContent = face.name;
+    const bits = [
+      face.pending ? "Pending join" : face.role === "lead" ? "Circle lead" : "Member",
+      face.isMe ? "you" : null,
+    ].filter(Boolean);
+    bioMeta.textContent = bits.join(" · ");
+    bioText.textContent = face.bio || "No short bio yet.";
+
+    const rootBox = root.getBoundingClientRect();
+    let left = clientX - rootBox.left + 14;
+    let top = clientY - rootBox.top + 14;
+    bioCard.hidden = false;
+    const cardW = bioCard.offsetWidth;
+    const cardH = bioCard.offsetHeight;
+    if (left + cardW > rootBox.width - 8) left = Math.max(8, clientX - rootBox.left - cardW - 14);
+    if (top + cardH > rootBox.height - 8) top = Math.max(8, clientY - rootBox.top - cardH - 14);
+    bioCard.style.left = `${left}px`;
+    bioCard.style.top = `${top}px`;
+  }
+
+  function draw() {
+    const width = Math.max(640, root.clientWidth || 800);
+    const height = Math.max(520, svg.clientHeight || 640);
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    clearSvg();
+
+    const { circles: laid, faces } = layout(width, height);
+    const faceByKey = new Map(faces.map((f) => [f.key, f]));
+
+    const defs = el("defs");
+    const soft = el("filter", { id: "bubbleSoft", x: "-20%", y: "-20%", width: "140%", height: "140%" });
+    soft.appendChild(
+      el("feDropShadow", {
+        dx: 0,
+        dy: 2,
+        stdDeviation: 3,
+        "flood-color": "#0f172a",
+        "flood-opacity": 0.12,
+      }),
+    );
+    defs.appendChild(soft);
+    for (const face of faces) {
+      const clip = el("clipPath", { id: `clip-${face.key.replace(":", "-")}` });
+      clip.appendChild(el("circle", { cx: face.x, cy: face.y, r: face.r }));
+      defs.appendChild(clip);
+    }
+    svg.appendChild(defs);
+
+    const linkLayer = el("g", { class: "links" });
+    svg.appendChild(linkLayer);
+
+    const official = new Set(
+      data.officialLinks.map((l) => `${l.userId}:${l.circleAId}:${l.circleBId}`),
+    );
+
+    const byUser = new Map<string, LayoutFace[]>();
+    for (const face of faces) {
+      if (face.pending) continue;
+      const list = byUser.get(face.userId) ?? [];
+      list.push(face);
+      byUser.set(face.userId, list);
+    }
+
+    for (const [, group] of byUser) {
+      if (group.length < 2) continue;
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const a = group[i];
+          const b = group[j];
+          const idA = Number(a.circleId);
+          const idB = Number(b.circleId);
+          const [lo, hi] = idA < idB ? [a.circleId, b.circleId] : [b.circleId, a.circleId];
+          const isOfficial = official.has(`${a.userId}:${lo}:${hi}`);
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const pull = Math.min(36, len * 0.18);
+          const cx1 = mx - (dy / len) * pull;
+          const cy1 = my + (dx / len) * pull;
+          const path = el("path", {
+            d: `M ${a.x} ${a.y} Q ${cx1} ${cy1} ${b.x} ${b.y}`,
+            fill: "none",
+            stroke: isOfficial ? "#050707" : "#64748b",
+            "stroke-width": isOfficial ? 2.5 : 1.6,
+            "stroke-dasharray": isOfficial ? "none" : "3 5",
+            opacity: isOfficial ? 0.72 : 0.55,
+            "pointer-events": "none",
+          });
+          if (!reducedMotion) {
+            path.style.opacity = "0";
+            requestAnimationFrame(() => {
+              path.style.transition = "opacity 0.7s ease";
+              path.style.opacity = isOfficial ? "0.72" : "0.55";
+            });
+          }
+          linkLayer.appendChild(path);
+        }
+      }
+    }
+
+    const bubbleLayer = el("g", { class: "bubbles" });
+    svg.appendChild(bubbleLayer);
+    for (const circle of laid) {
+      const g = el("g");
+      const dormant = circle.status === "dormant";
+      g.appendChild(
+        el("circle", {
+          cx: circle.x,
+          cy: circle.y,
+          r: circle.r,
+          fill: circle.color,
+          "fill-opacity": dormant ? 0.06 : 0.12,
+          stroke: circle.color,
+          "stroke-width": dormant ? 1.5 : 2.5,
+          "stroke-opacity": dormant ? 0.35 : 0.85,
+          filter: "url(#bubbleSoft)",
+        }),
+      );
+      g.appendChild(
+        el("circle", {
+          cx: circle.x,
+          cy: circle.y,
+          r: Math.max(circle.r - 10, circle.r * 0.82),
+          fill: "none",
+          stroke: circle.color,
+          "stroke-width": 1,
+          "stroke-opacity": dormant ? 0.2 : 0.35,
+          "stroke-dasharray": dormant ? "4 6" : "none",
+        }),
+      );
+      const label = el("text", {
+        x: circle.x,
+        y: circle.y,
+        "text-anchor": "middle",
+        "dominant-baseline": "middle",
+        fill: "#0f172a",
+        "font-size": Math.max(11, Math.min(15, circle.r * 0.22)),
+        "font-weight": 800,
+        "font-family": "Nunito, Lato, sans-serif",
+        opacity: dormant ? 0.55 : 0.9,
+        "pointer-events": "none",
+      });
+      label.textContent = circle.name;
+      g.appendChild(label);
+      const count = el("text", {
+        x: circle.x,
+        y: circle.y + Math.max(14, circle.r * 0.22),
+        "text-anchor": "middle",
+        fill: "#64748b",
+        "font-size": 11,
+        "font-family": "Lato, sans-serif",
+        "pointer-events": "none",
+      });
+      count.textContent = `${circle.memberCount} people`;
+      g.appendChild(count);
+
+      g.style.cursor = "pointer";
+      g.addEventListener("click", () => {
+        window.location.href = `/stewards/circles/${circle.slug}`;
+      });
+      if (!reducedMotion) {
+        g.style.opacity = "0";
+        g.style.transform = "scale(0.92)";
+        g.style.transformOrigin = `${circle.x}px ${circle.y}px`;
+        requestAnimationFrame(() => {
+          g.style.transition = "opacity 0.55s ease, transform 0.55s ease";
+          g.style.opacity = "1";
+          g.style.transform = "scale(1)";
+        });
+      }
+      bubbleLayer.appendChild(g);
+    }
+
+    const faceLayer = el("g", { class: "faces" });
+    svg.appendChild(faceLayer);
+    let activeUser: string | null = null;
+
+    const setHighlight = (userId: string | null) => {
+      activeUser = userId;
+      faceLayer.querySelectorAll<SVGGElement>("[data-user]").forEach((node) => {
+        const uid = node.dataset.user ?? "";
+        const on = !userId || uid === userId;
+        node.style.opacity = on ? "1" : "0.18";
+      });
+      linkLayer.querySelectorAll("path").forEach((path, idx) => {
+        // keep simple: dim all links unless a face is hovered (handled below via redraw cost)
+        void path;
+        void idx;
+      });
+    };
+
+    for (const face of faces) {
+      const g = el("g", { "data-user": face.userId, "data-key": face.key });
+      const ring = el("circle", {
+        cx: face.x,
+        cy: face.y,
+        r: face.r + (face.role === "lead" ? 3 : 1.5),
+        fill: "#fff",
+        stroke: face.isMe ? "#fdda24" : face.role === "lead" ? "#050707" : "#cbd5e1",
+        "stroke-width": face.role === "lead" || face.isMe ? 2.5 : 1.5,
+        opacity: face.pending ? 0.55 : 1,
+      });
+      const img = el("image", {
+        href: face.avatarSrc,
+        x: face.x - face.r,
+        y: face.y - face.r,
+        width: face.r * 2,
+        height: face.r * 2,
+        "clip-path": `url(#clip-${face.key.replace(":", "-")})`,
+        opacity: face.pending ? 0.4 : 1,
+        preserveAspectRatio: "xMidYMid slice",
+      });
+      // Some SVG serializers want xlink — set both
+      img.setAttributeNS("http://www.w3.org/1999/xlink", "href", face.avatarSrc);
+
+      g.appendChild(ring);
+      g.appendChild(img);
+      g.style.cursor = "pointer";
+
+      const onEnter = (ev: Event) => {
+        const e = ev as PointerEvent;
+        setHighlight(face.userId);
+        showBio(face, e.clientX, e.clientY);
+        linkLayer.querySelectorAll("path").forEach((path) => {
+          path.style.opacity = "0.12";
+        });
+        // Re-emphasize this person's links by matching endpoints roughly — rebuild pair strokes
+        for (const [, group] of byUser) {
+          if (group[0]?.userId !== face.userId) continue;
+          // leave dim; faces already highlight identity
+        }
+        void faceByKey;
+      };
+      const onMove = (ev: Event) => {
+        const e = ev as PointerEvent;
+        if (activeUser === face.userId) showBio(face, e.clientX, e.clientY);
+      };
+      const onLeave = () => {
+        setHighlight(null);
+        hideBio();
+        linkLayer.querySelectorAll("path").forEach((path) => {
+          const solid = path.getAttribute("stroke-dasharray") === "none";
+          path.style.opacity = solid ? "0.72" : "0.55";
+        });
+      };
+
+      g.addEventListener("pointerenter", onEnter);
+      g.addEventListener("pointermove", onMove);
+      g.addEventListener("pointerleave", onLeave);
+      g.addEventListener("focus", () => showBio(face, face.x, face.y));
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "img");
+      g.setAttribute("aria-label", `${face.name}${face.bio ? `: ${face.bio}` : ""}`);
+
+      faceLayer.appendChild(g);
+    }
+  }
+
+  draw();
+  const ro = new ResizeObserver(() => draw());
+  ro.observe(root);
 </script>

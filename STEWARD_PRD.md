@@ -66,7 +66,7 @@ Aligned with the top two priority blocks: **Steward Management** and **Email**.
 
 #### Email
 
-- Send / receive via alliance inbox (`hello@weallcanada.com` or successor address).
+- Send / receive via alliance website address `contact@weallcanada.org` (Resend). Human inbox `hello@weallcanada.org` stays on Ethical Host / Gmail; both can forward into Resend for the site inbox. See [EMAIL_SETUP.md](EMAIL_SETUP.md).
 - Cluster by conversation; show which admin replied and when.
 - Access limited to platform admins and circle leads (per permissions).
 - Mass campaigns (start small; scale toward 100–500):

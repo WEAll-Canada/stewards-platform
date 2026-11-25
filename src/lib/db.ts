@@ -212,6 +212,45 @@ export async function createApplicant(input: {
   return { userId: user.id, applicationId: application.id };
 }
 
+/** Claim a pre-imported steward (active, no password yet) by setting their password. */
+export async function claimImportedSteward(input: {
+  email: string;
+  passwordHash: string;
+  displayName: string;
+}): Promise<
+  | { ok: true; userId: number }
+  | { ok: false; reason: "not_found" | "disabled" | "already_set" }
+> {
+  const existing = await findUserByEmail(input.email);
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.status === "disabled") return { ok: false, reason: "disabled" };
+  if (existing.password_hash) return { ok: false, reason: "already_set" };
+
+  await env.DB.prepare(`UPDATE users SET password_hash = ?, status = 'active' WHERE id = ?`)
+    .bind(input.passwordHash, existing.id)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO user_roles (user_id, role_id)
+     SELECT ?, id FROM roles WHERE name = 'steward'`,
+  )
+    .bind(existing.id)
+    .run();
+
+  const name = input.displayName.trim();
+  if (name) {
+    await env.DB.prepare(
+      `UPDATE profiles
+       SET display_name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE user_id = ? AND trim(display_name) = ''`,
+    )
+      .bind(name.slice(0, 100), existing.id)
+      .run();
+  }
+
+  return { ok: true, userId: existing.id };
+}
+
 export async function listPendingApplications(): Promise<ApplicationRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.user_id, a.why, a.status, a.created_at, u.email, p.display_name,
@@ -521,6 +560,7 @@ export type NetworkNode = {
   avatar_url: string;
   regions: string;
   sector: string;
+  profile_type: string;
 };
 
 export type NetworkEdge = {
@@ -533,7 +573,8 @@ export type NetworkEdge = {
 /** Nodes = directory-visible stewards; edges = connections between those nodes. */
 export async function getNetworkGraph(): Promise<{ nodes: NetworkNode[]; edges: NetworkEdge[] }> {
   const { results: nodes } = await env.DB.prepare(
-    `SELECT u.id, p.display_name, p.interests, p.avatar_url, p.regions, p.sector
+    `SELECT u.id, p.display_name, p.interests, p.avatar_url, p.regions, p.sector,
+            COALESCE(NULLIF(p.profile_type, ''), 'steward') AS profile_type
      FROM users u
      JOIN profiles p ON p.user_id = u.id
      JOIN preferences pref ON pref.user_id = u.id
@@ -1127,7 +1168,7 @@ export async function saveOutboundEmail(input: {
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   await env.DB.prepare(
     `INSERT INTO email_messages (thread_id, direction, from_addr, to_addrs, body_text, admin_user_id, provider_id, created_at)
-     VALUES (?, 'outbound', 'hello@weallcanada.com', ?, ?, ?, ?, ?)`,
+     VALUES (?, 'outbound', 'contact@weallcanada.org', ?, ?, ?, ?, ?)`,
   )
     .bind(
       input.threadId,
@@ -1403,6 +1444,326 @@ export async function listUserCircles(
     .bind(userId)
     .all<{ id: number; slug: string; name: string; color_token: string; role: string }>();
   return results;
+}
+
+export type CircleMapCircle = {
+  id: number;
+  slug: string;
+  name: string;
+  color_token: string;
+  status: "active" | "dormant";
+  member_count: number;
+};
+
+export type CircleMapPerson = {
+  user_id: number;
+  circle_id: number;
+  display_name: string;
+  bio: string;
+  avatar_url: string;
+  role: "lead" | "member" | null;
+  pending: boolean;
+};
+
+export type CircleMapOfficialLink = {
+  id: number;
+  user_id: number;
+  circle_a_id: number;
+  circle_b_id: number;
+  status: "pending" | "active" | "rejected";
+  display_name: string;
+};
+
+/** People in circles (plus pending joins) and active official bridges for the circle map. */
+export async function getCircleMapGraph(): Promise<{
+  circles: CircleMapCircle[];
+  people: CircleMapPerson[];
+  officialLinks: CircleMapOfficialLink[];
+}> {
+  const { results: circles } = await env.DB.prepare(
+    `SELECT c.id, c.slug, c.name, c.color_token, c.status,
+            (SELECT COUNT(*) FROM circle_members cm WHERE cm.circle_id = c.id) AS member_count
+     FROM circles c
+     ORDER BY CASE c.slug WHEN 'central' THEN 0 ELSE 1 END, c.name COLLATE NOCASE`,
+  ).all<CircleMapCircle>();
+
+  const { results: members } = await env.DB.prepare(
+    `SELECT cm.user_id, cm.circle_id,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name,
+            COALESCE(NULLIF(p.bio, ''), '') AS bio,
+            COALESCE(p.avatar_url, '') AS avatar_url,
+            cm.role AS role,
+            0 AS pending
+     FROM circle_members cm
+     JOIN users u ON u.id = cm.user_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE u.status = 'active'`,
+  ).all<CircleMapPerson>();
+
+  const { results: pending } = await env.DB.prepare(
+    `SELECT jr.user_id, jr.circle_id,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name,
+            COALESCE(NULLIF(p.bio, ''), '') AS bio,
+            COALESCE(p.avatar_url, '') AS avatar_url,
+            NULL AS role,
+            1 AS pending
+     FROM circle_join_requests jr
+     JOIN users u ON u.id = jr.user_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE jr.status = 'pending' AND u.status = 'active'
+       AND NOT EXISTS (
+         SELECT 1 FROM circle_members cm
+         WHERE cm.circle_id = jr.circle_id AND cm.user_id = jr.user_id
+       )`,
+  ).all<CircleMapPerson>();
+
+  const { results: officialLinks } = await env.DB.prepare(
+    `SELECT cl.id, cl.user_id, cl.circle_a_id, cl.circle_b_id, cl.status,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name
+     FROM circle_links cl
+     JOIN users u ON u.id = cl.user_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE cl.status = 'active'`,
+  ).all<CircleMapOfficialLink>();
+
+  return {
+    circles,
+    people: [...members, ...pending.map((p) => ({ ...p, pending: Boolean(p.pending) }))],
+    officialLinks,
+  };
+}
+
+function orderedCirclePair(a: number, b: number): [number, number] | null {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return null;
+  return a < b ? [a, b] : [b, a];
+}
+
+async function isCircleLead(circleId: number, userId: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok FROM circle_members WHERE circle_id = ? AND user_id = ? AND role = 'lead'`,
+  )
+    .bind(circleId, userId)
+    .first<{ ok: number }>();
+  return Boolean(row);
+}
+
+async function isMemberOfBoth(userId: number, a: number, b: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM circle_members
+     WHERE user_id = ? AND circle_id IN (?, ?)`,
+  )
+    .bind(userId, a, b)
+    .first<{ n: number }>();
+  return (row?.n ?? 0) >= 2;
+}
+
+/** Self-nominate (pending) or lead/admin assign (active) a person as link between two circles. */
+export async function nominateCircleLink(input: {
+  actorId: number;
+  actorIsAdmin: boolean;
+  userId: number;
+  circleAId: number;
+  circleBId: number;
+}): Promise<{ ok: true; status: "pending" | "active" } | { ok: false; error: string }> {
+  const pair = orderedCirclePair(input.circleAId, input.circleBId);
+  if (!pair) return { ok: false, error: "Pick two different circles." };
+  const [circleAId, circleBId] = pair;
+
+  if (!(await isMemberOfBoth(input.userId, circleAId, circleBId))) {
+    return { ok: false, error: "That person needs to be in both circles first." };
+  }
+
+  const canAssign =
+    input.actorIsAdmin ||
+    (await isCircleLead(circleAId, input.actorId)) ||
+    (await isCircleLead(circleBId, input.actorId));
+  const isSelf = input.actorId === input.userId;
+
+  if (!canAssign && !isSelf) {
+    return { ok: false, error: "Only the person, a circle lead, or an admin can nominate a link." };
+  }
+
+  const status: "pending" | "active" = canAssign ? "active" : "pending";
+  const reviewedAt = status === "active" ? new Date().toISOString() : null;
+  const reviewedBy = status === "active" ? input.actorId : null;
+
+  const existing = await env.DB.prepare(
+    `SELECT id, status FROM circle_links
+     WHERE user_id = ? AND circle_a_id = ? AND circle_b_id = ?`,
+  )
+    .bind(input.userId, circleAId, circleBId)
+    .first<{ id: number; status: string }>();
+
+  if (existing?.status === "active") {
+    return { ok: false, error: "That official link is already in place." };
+  }
+  if (existing?.status === "pending" && status === "pending") {
+    return { ok: false, error: "A nomination is already pending." };
+  }
+
+  if (existing) {
+    await env.DB.prepare(
+      `UPDATE circle_links
+       SET status = ?, nominated_by = ?, created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+           reviewed_at = ?, reviewed_by = ?
+       WHERE id = ?`,
+    )
+      .bind(status, input.actorId, reviewedAt, reviewedBy, existing.id)
+      .run();
+  } else {
+    await env.DB.prepare(
+      `INSERT INTO circle_links
+         (user_id, circle_a_id, circle_b_id, status, nominated_by, reviewed_at, reviewed_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(input.userId, circleAId, circleBId, status, input.actorId, reviewedAt, reviewedBy)
+      .run();
+  }
+
+  return { ok: true, status };
+}
+
+export async function reviewCircleLink(input: {
+  linkId: number;
+  actorId: number;
+  actorIsAdmin: boolean;
+  decision: "approved" | "rejected";
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const row = await env.DB.prepare(
+    `SELECT id, user_id, circle_a_id, circle_b_id, status FROM circle_links WHERE id = ?`,
+  )
+    .bind(input.linkId)
+    .first<{
+      id: number;
+      user_id: number;
+      circle_a_id: number;
+      circle_b_id: number;
+      status: string;
+    }>();
+
+  if (!row) return { ok: false, error: "Link not found." };
+  if (row.status !== "pending") return { ok: false, error: "That nomination is no longer pending." };
+
+  const canReview =
+    input.actorIsAdmin ||
+    (await isCircleLead(row.circle_a_id, input.actorId)) ||
+    (await isCircleLead(row.circle_b_id, input.actorId));
+  if (!canReview) {
+    return { ok: false, error: "Only a circle lead or admin can review this link." };
+  }
+
+  if (input.decision === "approved" && !(await isMemberOfBoth(row.user_id, row.circle_a_id, row.circle_b_id))) {
+    return { ok: false, error: "That person is no longer in both circles." };
+  }
+
+  await env.DB.prepare(
+    `UPDATE circle_links
+     SET status = ?, reviewed_at = ?, reviewed_by = ?
+     WHERE id = ?`,
+  )
+    .bind(
+      input.decision === "approved" ? "active" : "rejected",
+      new Date().toISOString(),
+      input.actorId,
+      input.linkId,
+    )
+    .run();
+
+  return { ok: true };
+}
+
+export async function listPendingCircleLinksForReview(
+  actorId: number,
+  actorIsAdmin: boolean,
+): Promise<
+  {
+    id: number;
+    user_id: number;
+    display_name: string;
+    circle_a_id: number;
+    circle_a_name: string;
+    circle_b_id: number;
+    circle_b_name: string;
+    created_at: string;
+  }[]
+> {
+  const { results } = await env.DB.prepare(
+    `SELECT cl.id, cl.user_id, cl.circle_a_id, cl.circle_b_id, cl.created_at,
+            COALESCE(NULLIF(p.display_name, ''), u.email) AS display_name,
+            ca.name AS circle_a_name, cb.name AS circle_b_name
+     FROM circle_links cl
+     JOIN users u ON u.id = cl.user_id
+     LEFT JOIN profiles p ON p.user_id = u.id
+     JOIN circles ca ON ca.id = cl.circle_a_id
+     JOIN circles cb ON cb.id = cl.circle_b_id
+     WHERE cl.status = 'pending'
+     ORDER BY cl.created_at ASC`,
+  ).all<{
+    id: number;
+    user_id: number;
+    display_name: string;
+    circle_a_id: number;
+    circle_a_name: string;
+    circle_b_id: number;
+    circle_b_name: string;
+    created_at: string;
+  }>();
+
+  if (actorIsAdmin) return results;
+
+  const leadIds = new Set(
+    (
+      await env.DB.prepare(
+        `SELECT circle_id FROM circle_members WHERE user_id = ? AND role = 'lead'`,
+      )
+        .bind(actorId)
+        .all<{ circle_id: number }>()
+    ).results.map((r) => r.circle_id),
+  );
+
+  return results.filter((r) => leadIds.has(r.circle_a_id) || leadIds.has(r.circle_b_id));
+}
+
+/** Circle pairs the viewer belongs to that are not yet an active official link. */
+export async function listSelfLinkCandidates(userId: number): Promise<
+  { circle_a_id: number; circle_a_name: string; circle_b_id: number; circle_b_name: string; pending: boolean }[]
+> {
+  const memberships = await listUserCircles(userId);
+  if (memberships.length < 2) return [];
+
+  const { results: links } = await env.DB.prepare(
+    `SELECT circle_a_id, circle_b_id, status FROM circle_links WHERE user_id = ?`,
+  )
+    .bind(userId)
+    .all<{ circle_a_id: number; circle_b_id: number; status: string }>();
+
+  const byPair = new Map(links.map((l) => [`${l.circle_a_id}:${l.circle_b_id}`, l.status]));
+  const out: {
+    circle_a_id: number;
+    circle_a_name: string;
+    circle_b_id: number;
+    circle_b_name: string;
+    pending: boolean;
+  }[] = [];
+
+  for (let i = 0; i < memberships.length; i++) {
+    for (let j = i + 1; j < memberships.length; j++) {
+      const a = memberships[i];
+      const b = memberships[j];
+      const [idA, idB, nameA, nameB] =
+        a.id < b.id ? [a.id, b.id, a.name, b.name] : [b.id, a.id, b.name, a.name];
+      const status = byPair.get(`${idA}:${idB}`);
+      if (status === "active") continue;
+      out.push({
+        circle_a_id: idA,
+        circle_a_name: nameA,
+        circle_b_id: idB,
+        circle_b_name: nameB,
+        pending: status === "pending",
+      });
+    }
+  }
+  return out;
 }
 
 export async function getCircleBySlug(slug: string, userId: number): Promise<CircleRow | null> {
