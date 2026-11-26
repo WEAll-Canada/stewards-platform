@@ -3,12 +3,10 @@ import Base from "../../layouts/Base.astro";
 import CirclesSubnav from "../../components/CirclesSubnav.astro";
 import WeAllCircle from "../../components/WeAllCircle.astro";
 import { resolveAvatarSrc } from "../../lib/avatars";
-import { currentUser, hasRole } from "../../lib/auth";
+import { currentUser } from "../../lib/auth";
 import {
   getCircleMapGraph,
   listCirclesForUser,
-  listPendingCircleLinksForReview,
-  listSelfLinkCandidates,
   listUserCircles,
 } from "../../lib/db";
 
@@ -19,8 +17,6 @@ if (user.status !== "active") return Astro.redirect("/stewards/pending");
 const circles = await listCirclesForUser(user.id);
 const myCircles = await listUserCircles(user.id);
 const graph = await getCircleMapGraph();
-const selfCandidates = await listSelfLinkCandidates(user.id);
-const pendingLinks = await listPendingCircleLinksForReview(user.id, hasRole(user, "admin"));
 
 const variant = (token: string) =>
   (["central", "knowledge", "policy", "liberating", "grassroots"].includes(token)
@@ -136,70 +132,6 @@ const payload = JSON.stringify({
     </div>
   </section>
 
-  {(selfCandidates.length > 0 || pendingLinks.length > 0) && (
-    <section class="link-section" aria-labelledby="link-heading">
-      <h2 id="link-heading">Official link roles</h2>
-      <p class="map-lede">
-        An official link is a person named to bridge two specific circles. Multi-circle membership
-        always shows as a dotted line; an approved official link becomes a solid line.
-      </p>
-
-      {selfCandidates.length > 0 && (
-        <div class="link-block">
-          <h3>Offer yourself as a link</h3>
-          <ul class="link-list">
-            {selfCandidates.map((c) => (
-              <li>
-                <span>
-                  {c.circle_a_name} ↔ {c.circle_b_name}
-                  {c.pending && <span class="meta"> · pending</span>}
-                </span>
-                {c.pending ? (
-                  <span class="note">Waiting for a lead or admin</span>
-                ) : (
-                  <button
-                    type="button"
-                    class="btn btn--quiet"
-                    data-nominate-self
-                    data-a={c.circle_a_id}
-                    data-b={c.circle_b_id}
-                  >
-                    Nominate myself
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {pendingLinks.length > 0 && (
-        <div class="link-block">
-          <h3>Nominations to review</h3>
-          <ul class="link-list">
-            {pendingLinks.map((l) => (
-              <li>
-                <span>
-                  <strong>{l.display_name}</strong>
-                  {" "}· {l.circle_a_name} ↔ {l.circle_b_name}
-                </span>
-                <span class="link-actions">
-                  <button type="button" class="btn btn--accent" data-review-link data-id={l.id} data-decision="approved">
-                    Approve
-                  </button>
-                  <button type="button" class="btn btn--quiet" data-review-link data-id={l.id} data-decision="rejected">
-                    Decline
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <p id="link-status" role="status"></p>
-    </section>
-  )}
-
   <script id="circle-map-data" type="application/json" is:inline set:html={payload}></script>
 </Base>
 
@@ -237,49 +169,14 @@ const payload = JSON.stringify({
     font-size: var(--text-sm);
   }
 
-  .map-section,
-  .link-section {
+  .map-section {
     margin-top: var(--space-10);
     padding-top: var(--space-8);
     border-top: 1px solid var(--color-surface-subtle);
   }
 
-  .map-section h2,
-  .link-section h2 {
+  .map-section h2 {
     margin: 0 0 var(--space-2);
-  }
-
-  .link-block {
-    margin-top: var(--space-5);
-  }
-
-  .link-block h3 {
-    margin: 0 0 var(--space-3);
-    font-size: var(--text-md);
-  }
-
-  .link-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: var(--space-3);
-  }
-
-  .link-list li {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-3);
-    border: 1px solid var(--color-surface-subtle);
-    border-radius: var(--radius-md);
-  }
-
-  .link-actions {
-    display: flex;
-    gap: var(--space-2);
   }
 
   .map-shell {
@@ -412,62 +309,6 @@ const payload = JSON.stringify({
         return;
       }
       status.textContent = data.error ?? "Something went wrong.";
-    });
-  });
-
-  const linkStatus = document.querySelector<HTMLParagraphElement>("#link-status");
-  document.querySelectorAll<HTMLButtonElement>("[data-nominate-self]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (linkStatus) linkStatus.textContent = "Sending nomination…";
-      const res = await fetch("/api/circles/links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "nominate",
-          circleAId: Number(btn.dataset.a),
-          circleBId: Number(btn.dataset.b),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        if (linkStatus) {
-          linkStatus.textContent =
-            data.status === "active" ? "Official link saved." : "Nomination sent for review.";
-        }
-        btn.replaceWith(
-          Object.assign(document.createElement("span"), {
-            className: "note",
-            textContent: data.status === "active" ? "Linked" : "Pending",
-          }),
-        );
-        return;
-      }
-      if (linkStatus) linkStatus.textContent = data.error ?? "Something went wrong.";
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>("[data-review-link]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (linkStatus) linkStatus.textContent = "Updating…";
-      const res = await fetch("/api/circles/links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "review",
-          linkId: Number(btn.dataset.id),
-          decision: btn.dataset.decision,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        if (linkStatus) {
-          linkStatus.textContent =
-            btn.dataset.decision === "approved" ? "Link approved." : "Nomination declined.";
-        }
-        btn.closest("li")?.remove();
-        return;
-      }
-      if (linkStatus) linkStatus.textContent = data.error ?? "Something went wrong.";
     });
   });
 

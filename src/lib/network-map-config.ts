@@ -24,28 +24,41 @@ export type ParticipantMapConfig = {
   isolate_positions: Record<string, IsolatePosition>;
 };
 
-/** Copied from Festival `DEFAULT_PARTICIPANT_MAP_CONFIG`. */
+/**
+ * Force layout tuned for denser steward maps (Kumu-style spread):
+ * stronger repulsion + longer, softer springs so clusters open up and lines
+ * overlap less. Unconnected people keep a clear outer belt.
+ */
 export const DEFAULT_PARTICIPANT_MAP_CONFIG: ParticipantMapConfig = {
-  repulsion_strength: 1.2,
-  alpha_decay: 0.028,
+  repulsion_strength: 2.4,
+  alpha_decay: 0.024,
   alpha_min: 0.001,
-  velocity_decay: 0.6,
-  settle_velocity: 0.06,
-  max_ticks: 280,
-  link_distance_1: 240,
-  link_distance_2: 200,
-  link_distance_3: 170,
-  link_distance_4: 145,
-  link_strength_1: 0.08,
-  link_strength_2: 0.07,
-  link_strength_3: 0.09,
-  link_strength_4: 0.12,
-  collision_padding: 18,
-  label_clearance: 28,
-  disconnected_ring_extra: 120,
-  unconnected_empty_zone: 0,
+  velocity_decay: 0.55,
+  settle_velocity: 0.05,
+  max_ticks: 360,
+  link_distance_1: 320,
+  link_distance_2: 280,
+  link_distance_3: 240,
+  link_distance_4: 200,
+  link_strength_1: 0.04,
+  link_strength_2: 0.04,
+  link_strength_3: 0.05,
+  link_strength_4: 0.06,
+  collision_padding: 28,
+  label_clearance: 34,
+  disconnected_ring_extra: 160,
+  unconnected_empty_zone: 120,
   isolate_positions: {},
 };
+
+/** Ring colors for person type (WeAll palette). */
+export const NODE_RING = {
+  you: "#000000",
+  steward: "#00a9e0",
+  partner: "#ff8200",
+  highlight: "#0c4da2",
+  muted: "#e2e8f0",
+} as const;
 
 export const CONNECTION_REASON_COLORS = {
   work: "#2563EB",

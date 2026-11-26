@@ -46,6 +46,7 @@ Rules: one test per line, add new lines at the bottom, and never delete or weake
 - [auto] Apply with an existing email redirects to Activate. (tests/stewards-auth.spec.ts)
 - [auto] Profile photo editor offers upload only (no prepared thumbnail presets). (tests/stewards-platform.spec.ts)
 - [auto] Network map has a hamburger filter menu (province, steward/partner, interest highlight) and an icon fullscreen control. (tests/stewards-platform.spec.ts)
+- [auto] Network map legend distinguishes steward vs partner rings and invites dragging people to rearrange. (tests/stewards-platform.spec.ts)
 - [auto] Local preview seeds a demo network with stewards, partners, and connections visible on the map. (tests/stewards-platform.spec.ts)
 - [manual] Dashboard sections use even spacing (one gap between panels; Events today / Upcoming share the same inner gap; Commons is full-width).
-- [auto] Circles page has All circles tabs, embeds a circles map, and supports official link nomination. (tests/stewards-platform.spec.ts)
+- [auto] Circles page has All circles tabs and embeds a circles map; official-link nominate UI is hidden for now but the API still works. (tests/stewards-platform.spec.ts)

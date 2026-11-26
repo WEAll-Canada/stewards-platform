@@ -122,7 +122,10 @@ INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES
   (120, 1), (121, 1), (122, 1), (123, 1), (124, 1), (125, 1), (126, 1), (127, 1),
   (128, 1), (129, 1), (130, 1), (131, 1), (132, 1), (133, 1), (134, 1);
 
--- Relationships: mix of steward↔steward, steward↔partner, partner↔partner.
+-- Relationships: denser core + intentional unconnected floaters in the outer belt
+-- (Festival-style). People without edges: 109, 111, 113, 114, 121, 123, 126, 130, 132.
+DELETE FROM connections WHERE id BETWEEN 100 AND 199;
+
 INSERT OR IGNORE INTO connections (id, from_user_id, to_user_id, strength, reason, updated_at) VALUES
   (100, 100, 1, 3, 'work', '2026-04-02T12:00:00Z'),
   (101, 100, 124, 4, 'work|learning', '2026-04-02T12:00:00Z'),
@@ -132,29 +135,20 @@ INSERT OR IGNORE INTO connections (id, from_user_id, to_user_id, strength, reaso
   (105, 102, 100, 2, 'friendship', '2026-04-02T12:00:00Z'),
   (106, 103, 120, 4, 'work|learning', '2026-04-02T12:00:00Z'),
   (107, 103, 116, 3, 'community', '2026-04-02T12:00:00Z'),
-  (108, 104, 123, 3, 'work', '2026-04-02T12:00:00Z'),
-  (109, 104, 108, 2, 'learning', '2026-04-02T12:00:00Z'),
+  (108, 104, 108, 2, 'learning', '2026-04-02T12:00:00Z'),
   (110, 105, 125, 4, 'work', '2026-04-02T12:00:00Z'),
   (111, 105, 3, 2, 'community', '2026-04-02T12:00:00Z'),
-  (112, 106, 121, 3, 'work|learning', '2026-04-02T12:00:00Z'),
-  (113, 106, 134, 3, 'work', '2026-04-02T12:00:00Z'),
+  (112, 106, 134, 3, 'work', '2026-04-02T12:00:00Z'),
   (114, 107, 127, 4, 'work', '2026-04-02T12:00:00Z'),
   (115, 107, 131, 3, 'community|learning', '2026-04-02T12:00:00Z'),
   (116, 107, 4, 2, 'friendship', '2026-04-02T12:00:00Z'),
   (117, 108, 129, 3, 'work', '2026-04-02T12:00:00Z'),
-  (118, 109, 133, 2, 'learning', '2026-04-02T12:00:00Z'),
-  (119, 110, 132, 4, 'work|community', '2026-04-02T12:00:00Z'),
-  (120, 110, 114, 3, 'learning', '2026-04-02T12:00:00Z'),
-  (121, 111, 127, 3, 'work', '2026-04-02T12:00:00Z'),
-  (122, 112, 130, 4, 'community', '2026-04-02T12:00:00Z'),
-  (123, 112, 115, 2, 'learning', '2026-04-02T12:00:00Z'),
-  (124, 113, 128, 4, 'work', '2026-04-02T12:00:00Z'),
-  (125, 114, 126, 3, 'community|learning', '2026-04-02T12:00:00Z'),
+  (119, 110, 115, 3, 'learning', '2026-04-02T12:00:00Z'),
+  (122, 112, 115, 2, 'learning', '2026-04-02T12:00:00Z'),
   (126, 115, 1, 3, 'work', '2026-04-02T12:00:00Z'),
   (127, 115, 129, 2, 'learning', '2026-04-02T12:00:00Z'),
   (128, 116, 122, 3, 'work', '2026-04-02T12:00:00Z'),
   (129, 120, 122, 3, 'community', '2026-04-02T12:00:00Z'),
-  (130, 121, 132, 2, 'learning', '2026-04-02T12:00:00Z'),
   (131, 124, 134, 3, 'work', '2026-04-02T12:00:00Z'),
   (132, 128, 131, 2, 'community', '2026-04-02T12:00:00Z'),
   (133, 133, 134, 3, 'work|learning', '2026-04-02T12:00:00Z'),

@@ -35,6 +35,10 @@ export type SimNode = MapNode & {
   fx: number | null;
   fy: number | null;
   radius: number;
+  /** Home seat for unconnected (asteroid-belt) floaters. */
+  homeX: number;
+  homeY: number;
+  isIsolate: boolean;
 };
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -129,18 +133,23 @@ function layoutAsteroidBelt(
   cy: number,
   innerRadius: number,
   outerRadius: number,
+  _footprint?: number,
 ) {
   const inner = Math.max(8, innerRadius);
   const outer = Math.max(inner + 48, outerRadius);
   const innerSq = inner * inner;
   const spanSq = outer * outer - innerSq;
-  const positions = new Map<string, { x: number; y: number }>();
+  const positions = new Map<string, { x: number; y: number; homeRadius: number }>();
   ids.forEach((id, index) => {
     const salt = hashString(id);
     const u = (index + 0.4 + ((salt % 19) - 9) / 40) / Math.max(ids.length, 1);
     const radius = Math.sqrt(innerSq + clamp01(u) * spanSq);
     const angle = index * GOLDEN_ANGLE + ((salt % 23) - 11) * 0.045;
-    positions.set(id, { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    positions.set(id, {
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+      homeRadius: radius,
+    });
   });
   return positions;
 }
@@ -292,12 +301,15 @@ export function createSimNodes(
     centerY,
     beltInner,
     beltOuter,
+    isolateFootprint,
   );
-  for (const [userId, point] of belt) positions.set(userId, point);
+  for (const [userId, point] of belt) positions.set(userId, { x: point.x, y: point.y });
 
   return nodes.map((node) => {
     const isIsolate = isolateIds.has(node.id);
     const position = positions.get(node.id) ?? { x: centerX, y: centerY };
+    // Festival pins isolates during force settle so the belt keeps its spacing;
+    // ambient float (below) adds organic motion on top of that home seat.
     return {
       ...node,
       x: position.x,
@@ -307,8 +319,42 @@ export function createSimNodes(
       fx: isIsolate ? position.x : null,
       fy: isIsolate ? position.y : null,
       radius: nodeRadius(node),
+      homeX: position.x,
+      homeY: position.y,
+      isIsolate,
     };
   });
+}
+
+/** Soft living drift — Festival-style organic float after the force layout settles. */
+export function applyAmbientFloat(nodes: SimNode[], timeMs: number) {
+  for (const node of nodes) {
+    const salt = hashString(node.id);
+    const phase = (salt % 628) / 100;
+    if (node.isIsolate) {
+      // Outer-belt floaters: slow orbital bob around their home seat.
+      const orbit = 5 + (salt % 7);
+      const speed = 0.00035 + (salt % 5) * 0.00004;
+      node.x = node.homeX + Math.cos(timeMs * speed + phase) * orbit;
+      node.y = node.homeY + Math.sin(timeMs * speed * 0.85 + phase) * orbit;
+      node.fx = node.x;
+      node.fy = node.y;
+      continue;
+    }
+    // Connected cluster: tiny breathing drift so the graph feels alive.
+    const amp = 1.6 + (salt % 4) * 0.35;
+    const speed = 0.00022 + (salt % 6) * 0.00003;
+    node.x = node.homeX + Math.cos(timeMs * speed + phase) * amp;
+    node.y = node.homeY + Math.sin(timeMs * speed * 1.1 + phase * 0.7) * amp;
+  }
+}
+
+/** Capture settled seats as homes before ambient float begins. */
+export function captureHomes(nodes: SimNode[]) {
+  for (const node of nodes) {
+    node.homeX = node.x;
+    node.homeY = node.y;
+  }
 }
 
 function totalVelocity(nodes: SimNode[]) {
@@ -489,7 +535,8 @@ export function curvedPath(x1: number, y1: number, x2: number, y2: number, edgeK
   const dy = y2 - y1;
   const length = Math.hypot(dx, dy) || 1;
   const sign = hashString(edgeKey) % 2 === 0 ? 1 : -1;
-  const bend = length * (0.12 + (hashString(edgeKey) % 5) * 0.02) * sign;
+  // Stronger per-edge bend so parallel ties fan apart (Kumu-like readability).
+  const bend = length * (0.18 + (hashString(edgeKey) % 7) * 0.03) * sign;
   const controlX = midX - (dy / length) * bend;
   const controlY = midY + (dx / length) * bend;
   return `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`;

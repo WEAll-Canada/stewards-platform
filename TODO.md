@@ -26,3 +26,5 @@ When an item is finished, check it off and add the date it was done:
 - [ ] Operator member import: export members + connections CSVs into gitignored `private/`, generate SQL (`users` active + null password, profiles, preferences, steward role, connections by email), back up production D1, then `npx wrangler d1 execute DB --env production --remote --file private/import-members.sql` (never commit the SQL) (Naryan, 2026-11-18)
 - [ ] After production member import, send invite campaign via Alliance Email pointing to `/stewards/activate` with the email already on file (Naryan, 2026-11-18)
 - [ ] `scripts/test.mjs`: after wiping `.wrangler/test-state`, create `.wrangler/test-state/v3/cache` before migrations — Wrangler 4.157 on Windows/OneDrive fails with CreateDirectory path-not-found mid-migration (Naryan, 2026-11-25)
+- [ ] Revisit official circle-link nomination UI under the Circles map (self-nominate + lead/admin review); map still draws solid lines for active links (Naryan, 2026-11-25)
+- [ ] Steward↔partner connections need a different question set than steward↔steward “how often / why” (not the same integrate cadence) — design TBD (Naryan, 2026-11-25)

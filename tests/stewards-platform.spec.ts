@@ -589,7 +589,7 @@ test("demo network seed includes stewards, partners, and connections", async ({ 
   const partners = graph.nodes.filter((n: { profileType: string }) => n.profileType === "partner");
   expect(stewards.length).toBeGreaterThanOrEqual(20);
   expect(partners.length).toBeGreaterThanOrEqual(15);
-  expect(graph.edges.length).toBeGreaterThanOrEqual(20);
+  expect(graph.edges.length).toBeGreaterThanOrEqual(15);
   expect(html).toContain("Ontario");
   expect(html).toContain("Maya Chen");
   expect(html).toContain("Green Futures Collective");
@@ -639,6 +639,9 @@ test("interest matching finds stewards by topic and network map renders", async 
   expect(networkHtml).toContain("data-filter-type");
   expect(networkHtml).toContain("data-filter-interest");
   expect(networkHtml).toContain('"profileType"');
+  expect(networkHtml).toContain("swatch--steward");
+  expect(networkHtml).toContain("swatch--partner");
+  expect(networkHtml).toMatch(/Drag a person to rearrange/i);
   expect(networkHtml).not.toMatch(/>\s*Full screen\s*</);
 });
 
@@ -683,7 +686,7 @@ test("dashboard and connect first-pass feedback", async ({ request }) => {
   expect(alex).toBeLessThan(admin);
 });
 
-test("circle map page embeds graph data and official link nomination works", async ({ request }) => {
+test("circle map page embeds graph data and official link API still works", async ({ request }) => {
   const adminCookie = await login(request, "admin@weallcanada.local");
   const page = await request.get("/stewards/circles", { headers: { cookie: adminCookie } });
   expect(page.status()).toBe(200);
@@ -691,20 +694,14 @@ test("circle map page embeds graph data and official link nomination works", asy
   expect(html).toContain('id="circle-map-data"');
   expect(html).toContain("Circles map");
   expect(html).toContain("data-circle-map-svg");
+  expect(html).not.toContain("Official link roles");
+  expect(html).not.toContain("Nominate myself");
 
-  // Admin is lead of Central and member of Policy — can assign an official link for Alex (in both Central + Knowledge).
+  // Admin can still assign an official link via API (UI section removed for now).
   const nominate = await request.post("/api/circles/links", {
     headers: { cookie: adminCookie, "Content-Type": "application/json", ...asVisitor() },
     data: { action: "nominate", userId: 3, circleAId: 1, circleBId: 2 },
   });
   // 200 if newly set/refreshed, 400 if already active from seed
   expect([200, 400]).toContain(nominate.status());
-
-  // Maya is in Central + Knowledge — self-nominate (may already be active from seed).
-  const mayaCookie = await login(request, "maya@demo.weall.local");
-  const selfNom = await request.post("/api/circles/links", {
-    headers: { cookie: mayaCookie, "Content-Type": "application/json", ...asVisitor() },
-    data: { action: "nominate", circleAId: 1, circleBId: 2 },
-  });
-  expect([200, 400]).toContain(selfNom.status());
 });

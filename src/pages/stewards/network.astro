@@ -6,6 +6,7 @@ import { currentUser } from "../../lib/auth";
 import { CONNECTION_REASON_LEGEND } from "../../lib/network-map-config";
 import { getNetworkGraph } from "../../lib/db";
 
+
 const user = await currentUser(Astro.request);
 if (!user) return Astro.redirect("/stewards/login");
 if (user.status !== "active") return Astro.redirect("/stewards/pending");
@@ -52,8 +53,8 @@ const payload = JSON.stringify({
 <Base title="Connect · Network map" active="connect" user={user}>
   <h1>Connect</h1>
   <p class="lede">
-    A living map of directory stewards and the connections between them.
-    Drag to pan, scroll to zoom, click a person for details.
+    A living map of directory stewards and partners.
+    Drag a person to rearrange, drag empty space to pan, scroll to zoom, click for details.
   </p>
   <ConnectSubnav active="network" />
 
@@ -132,7 +133,7 @@ const payload = JSON.stringify({
             d="M7 14H5v5h5v-2H7v-3zm12 0h-2v3h-3v2h5v-5zM7 5h3V3H5v5h2V5zm12-2h-5v2h3v3h2V3z"
           ></path>
         </svg>
-        <svg class="icon-compress" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" hidden>
+        <svg class="icon-compress" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
           <path
             fill="currentColor"
             d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
@@ -162,6 +163,8 @@ const payload = JSON.stringify({
 
   <div class="legend">
     <span><i class="swatch swatch--you"></i> You</span>
+    <span><i class="swatch swatch--steward"></i> Steward</span>
+    <span><i class="swatch swatch--partner"></i> Partner</span>
     <span><i class="swatch swatch--highlight"></i> Highlighted interest</span>
     {CONNECTION_REASON_LEGEND.map((item) => (
       <span><i class="swatch" style={`background:${item.color}`}></i> {item.label}</span>
@@ -243,6 +246,19 @@ const payload = JSON.stringify({
     background: var(--color-surface-subtle);
   }
 
+  /* Only one fullscreen glyph at a time (SVG `hidden` is unreliable here). */
+  .map-icon-btn--fullscreen .icon-compress {
+    display: none;
+  }
+
+  .map-icon-btn--fullscreen[aria-pressed="true"] .icon-expand {
+    display: none;
+  }
+
+  .map-icon-btn--fullscreen[aria-pressed="true"] .icon-compress {
+    display: block;
+  }
+
   .map-filters {
     position: absolute;
     top: calc(100% + 0.4rem);
@@ -293,7 +309,7 @@ const payload = JSON.stringify({
 
   .network-map {
     width: 100%;
-    height: min(70vh, 36rem);
+    height: min(75vh, 42rem);
     display: block;
     cursor: grab;
     touch-action: none;
@@ -400,20 +416,40 @@ const payload = JSON.stringify({
     outline: 2px solid #000;
   }
 
+  .swatch--steward {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: #fff;
+    outline: 2px solid #00a9e0;
+  }
+
+  .swatch--partner {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: #fff;
+    outline: 2px solid #ff8200;
+  }
+
   .swatch--highlight {
     width: 0.75rem;
     height: 0.75rem;
     border-radius: 999px;
-    background: #00a9e0;
+    background: #e0f4fb;
     outline: 2px solid #0c4da2;
   }
 </style>
 
 <script>
+  import { NODE_RING } from "../../lib/network-map-config";
   import {
     DEFAULT_PARTICIPANT_MAP_CONFIG,
+    applyAmbientFloat,
+    captureHomes,
     createSimNodes,
     settleLayout,
+    simulateStep,
     curvedPath,
     edgeEndpoints,
     edgeColor,
@@ -429,7 +465,7 @@ const payload = JSON.stringify({
     edges: MapEdge[];
   };
 
-  type EdgeEl = { source: string; target: string; el: SVGPathElement };
+  type EdgeEl = { source: string; target: string; el: SVGPathElement; weight: number; reason: string };
   type NodeEl = { id: string; el: SVGGElement; halo: SVGCircleElement };
 
   type FilterState = {
@@ -471,10 +507,21 @@ const payload = JSON.stringify({
   let edgeEls: EdgeEl[] = [];
   let nodeEls: NodeEl[] = [];
   let visibleIds = new Set(data.nodes.map((n) => n.id));
+  let floatFrame = 0;
+  let simFrame = 0;
+  let layoutEdges: MapEdge[] = data.edges;
   let filters: FilterState = {
     types: new Set(["steward", "partner"]),
     province: "",
     interest: "",
+  };
+  const nodeDrag = {
+    active: false,
+    nodeId: null as string | null,
+    pointerId: null as number | null,
+    startX: 0,
+    startY: 0,
+    moved: false,
   };
 
   const viewport = document.createElementNS(ns, "g");
@@ -529,6 +576,12 @@ const payload = JSON.stringify({
     return neighbors;
   }
 
+  function ringFor(node: MapNode | SimNode) {
+    if (node.isMe) return { stroke: NODE_RING.you, width: "3", fill: "#fff" };
+    if (node.profileType === "partner") return { stroke: NODE_RING.partner, width: "2.5", fill: "#fff" };
+    return { stroke: NODE_RING.steward, width: "2.5", fill: "#fff" };
+  }
+
   function applySpotlight() {
     const spotlight = spotlightSet();
     for (const edge of edgeEls) {
@@ -538,7 +591,7 @@ const payload = JSON.stringify({
         continue;
       }
       const dim = spotlight && !(spotlight.has(edge.source) && spotlight.has(edge.target));
-      edge.el.setAttribute("stroke-opacity", dim ? "0.12" : "0.85");
+      edge.el.setAttribute("stroke-opacity", dim ? "0.12" : "0.75");
     }
     for (const node of nodeEls) {
       if (!visibleIds.has(node.id)) {
@@ -546,24 +599,25 @@ const payload = JSON.stringify({
         node.el.style.pointerEvents = "none";
         continue;
       }
-      node.el.style.pointerEvents = "auto";
-      const source = data.nodes.find((n) => n.id === node.id);
-      const highlighted = Boolean(filters.interest && source?.interests.includes(filters.interest));
+      node.el.style.pointerEvents = nodeDrag.active ? "none" : "auto";
+      if (nodeDrag.active && nodeDrag.nodeId === node.id) {
+        node.el.style.pointerEvents = "auto";
+      }
+      const source = nodes.find((n) => n.id === node.id) ?? data.nodes.find((n) => n.id === node.id);
+      if (!source) continue;
+      const highlighted = Boolean(filters.interest && source.interests.includes(filters.interest));
       if (highlighted) {
-        node.halo.setAttribute("stroke", "#0c4da2");
+        node.halo.setAttribute("stroke", NODE_RING.highlight);
         node.halo.setAttribute("stroke-width", "3.5");
         node.halo.setAttribute("fill", "#e0f4fb");
-      } else if (source?.isMe) {
-        node.halo.setAttribute("stroke", "#000");
-        node.halo.setAttribute("stroke-width", "3");
-        node.halo.setAttribute("fill", "#fff");
       } else {
-        node.halo.setAttribute("stroke", "#e2e8f0");
-        node.halo.setAttribute("stroke-width", "1.5");
-        node.halo.setAttribute("fill", "#fff");
+        const ring = ringFor(source);
+        node.halo.setAttribute("stroke", ring.stroke);
+        node.halo.setAttribute("stroke-width", ring.width);
+        node.halo.setAttribute("fill", ring.fill);
       }
       const dimBySpotlight = spotlight && !spotlight.has(node.id);
-      const dimByInterest = Boolean(filters.interest && !highlighted && !source?.isMe);
+      const dimByInterest = Boolean(filters.interest && !highlighted && !source.isMe);
       node.el.setAttribute("opacity", dimBySpotlight || dimByInterest ? "0.22" : "1");
     }
   }
@@ -611,6 +665,22 @@ const payload = JSON.stringify({
     applySpotlight();
   }
 
+  function paintPositions() {
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    for (const edge of edgeEls) {
+      const a = byId.get(edge.source);
+      const b = byId.get(edge.target);
+      if (!a || !b) continue;
+      const ends = edgeEndpoints(a.x, a.y, a.radius, b.x, b.y, b.radius);
+      edge.el.setAttribute("d", curvedPath(ends.x1, ends.y1, ends.x2, ends.y2, `${edge.source}:${edge.target}`));
+    }
+    for (const node of nodeEls) {
+      const sim = byId.get(node.id);
+      if (!sim) continue;
+      node.el.setAttribute("transform", `translate(${sim.x},${sim.y})`);
+    }
+  }
+
   function buildGraph() {
     edgeLayer.replaceChildren();
     nodeLayer.replaceChildren();
@@ -618,7 +688,7 @@ const payload = JSON.stringify({
     nodeEls = [];
     const byId = new Map(nodes.map((n) => [n.id, n]));
 
-    for (const edge of data.edges) {
+    for (const edge of layoutEdges) {
       const a = byId.get(edge.source);
       const b = byId.get(edge.target);
       if (!a || !b) continue;
@@ -632,21 +702,28 @@ const payload = JSON.stringify({
       path.setAttribute("stroke-linecap", "round");
       path.style.transition = "stroke-opacity 450ms ease";
       edgeLayer.appendChild(path);
-      edgeEls.push({ source: edge.source, target: edge.target, el: path });
+      edgeEls.push({
+        source: edge.source,
+        target: edge.target,
+        el: path,
+        weight: edge.weight,
+        reason: edge.reason,
+      });
     }
 
     for (const node of nodes) {
       const g = document.createElementNS(ns, "g");
       g.setAttribute("data-node", node.id);
       g.setAttribute("transform", `translate(${node.x},${node.y})`);
-      g.style.cursor = "pointer";
+      g.style.cursor = "grab";
       g.style.transition = "opacity 450ms ease";
 
+      const ring = ringFor(node);
       const halo = document.createElementNS(ns, "circle");
       halo.setAttribute("r", String(node.radius + 5));
-      halo.setAttribute("fill", "#fff");
-      halo.setAttribute("stroke", node.isMe ? "#000" : "#e2e8f0");
-      halo.setAttribute("stroke-width", node.isMe ? "3" : "1.5");
+      halo.setAttribute("fill", ring.fill);
+      halo.setAttribute("stroke", ring.stroke);
+      halo.setAttribute("stroke-width", ring.width);
       g.appendChild(halo);
 
       const clipId = `clip-${node.id}`;
@@ -680,18 +757,108 @@ const payload = JSON.stringify({
       label.setAttribute("fill", "#0f172a");
       g.appendChild(label);
 
+      const hit = document.createElementNS(ns, "circle");
+      hit.setAttribute("r", String(node.radius + 12));
+      hit.setAttribute("fill", "transparent");
+      hit.style.cursor = "grab";
+      g.appendChild(hit);
+
       g.addEventListener("pointerenter", () => {
+        if (nodeDrag.active) return;
         hoveredId = node.id;
         applySpotlight();
       });
       g.addEventListener("pointerleave", () => {
+        if (nodeDrag.active) return;
         hoveredId = null;
         applySpotlight();
       });
-      g.addEventListener("click", (event) => {
+      hit.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
         event.stopPropagation();
-        openPanel(node);
+        event.preventDefault();
+        stopFloat();
+        stopSim();
+        const point = clientToGraph(event.clientX, event.clientY);
+        node.fx = point.x;
+        node.fy = point.y;
+        node.x = point.x;
+        node.y = point.y;
+        nodeDrag.active = true;
+        nodeDrag.nodeId = node.id;
+        nodeDrag.pointerId = event.pointerId;
+        nodeDrag.startX = event.clientX;
+        nodeDrag.startY = event.clientY;
+        nodeDrag.moved = false;
+        g.style.cursor = "grabbing";
+        hit.style.cursor = "grabbing";
+        hit.setPointerCapture(event.pointerId);
+        paintPositions();
       });
+      hit.addEventListener("pointermove", (event) => {
+        if (!nodeDrag.active || nodeDrag.nodeId !== node.id || nodeDrag.pointerId !== event.pointerId) {
+          return;
+        }
+        if (
+          !nodeDrag.moved &&
+          Math.hypot(event.clientX - nodeDrag.startX, event.clientY - nodeDrag.startY) > 5
+        ) {
+          nodeDrag.moved = true;
+        }
+        const point = clientToGraph(event.clientX, event.clientY);
+        node.fx = point.x;
+        node.fy = point.y;
+        node.x = point.x;
+        node.y = point.y;
+        paintPositions();
+      });
+      const endNodeDrag = (event: PointerEvent) => {
+        if (!nodeDrag.active || nodeDrag.nodeId !== node.id || nodeDrag.pointerId !== event.pointerId) {
+          return;
+        }
+        const wasClick = !nodeDrag.moved;
+        try {
+          hit.releasePointerCapture(event.pointerId);
+        } catch {
+          /* ignore */
+        }
+        g.style.cursor = "grab";
+        hit.style.cursor = "grab";
+        nodeDrag.active = false;
+        nodeDrag.nodeId = null;
+        nodeDrag.pointerId = null;
+
+        if (wasClick) {
+          if (node.isIsolate) {
+            node.fx = node.homeX;
+            node.fy = node.homeY;
+            node.x = node.homeX;
+            node.y = node.homeY;
+          } else {
+            node.fx = null;
+            node.fy = null;
+          }
+          openPanel(node);
+          startFloat();
+          return;
+        }
+
+        // Keep isolates where dropped; let connected nodes re-spring into place.
+        if (node.isIsolate) {
+          node.homeX = node.x;
+          node.homeY = node.y;
+          node.fx = node.x;
+          node.fy = node.y;
+          captureHomes(nodes);
+          startFloat();
+        } else {
+          node.fx = null;
+          node.fy = null;
+          reheatSimulation();
+        }
+      };
+      hit.addEventListener("pointerup", endNodeDrag);
+      hit.addEventListener("pointercancel", endNodeDrag);
 
       nodeLayer.appendChild(g);
       nodeEls.push({ id: node.id, el: g, halo });
@@ -700,11 +867,73 @@ const payload = JSON.stringify({
     applySpotlight();
   }
 
+  function clientToGraph(clientX: number, clientY: number) {
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - view.x) / view.k,
+      y: (clientY - rect.top - view.y) / view.k,
+    };
+  }
+
+  function stopFloat() {
+    if (floatFrame) {
+      cancelAnimationFrame(floatFrame);
+      floatFrame = 0;
+    }
+  }
+
+  function stopSim() {
+    if (simFrame) {
+      cancelAnimationFrame(simFrame);
+      simFrame = 0;
+    }
+  }
+
+  function startFloat() {
+    stopFloat();
+    const step = (timeMs: number) => {
+      if (nodeDrag.active) {
+        floatFrame = requestAnimationFrame(step);
+        return;
+      }
+      applyAmbientFloat(nodes, timeMs);
+      paintPositions();
+      floatFrame = requestAnimationFrame(step);
+    };
+    floatFrame = requestAnimationFrame(step);
+  }
+
+  function reheatSimulation() {
+    stopFloat();
+    stopSim();
+    let alpha = 0.55;
+    const step = () => {
+      if (alpha <= config.alpha_min) {
+        for (const node of nodes) {
+          node.vx = 0;
+          node.vy = 0;
+        }
+        captureHomes(nodes);
+        simFrame = 0;
+        startFloat();
+        return;
+      }
+      simulateStep(nodes, layoutEdges, width, height, alpha, config);
+      alpha *= 1 - config.alpha_decay;
+      paintPositions();
+      applySpotlight();
+      simFrame = requestAnimationFrame(step);
+    };
+    simFrame = requestAnimationFrame(step);
+  }
+
   function relayout() {
+    stopFloat();
+    stopSim();
     width = Math.max(root.clientWidth || 900, 320);
-    height = Math.max(Math.min(width * 0.65, 560), 380);
+    height = Math.max(Math.min(width * 0.7, 620), 420);
     if (document.fullscreenElement === root) {
-      height = Math.max(root.clientHeight || height, 380);
+      height = Math.max(root.clientHeight || height, 420);
     }
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("width", String(width));
@@ -712,20 +941,26 @@ const payload = JSON.stringify({
     panRect.setAttribute("width", String(width));
     panRect.setAttribute("height", String(height));
     const layoutNodes = data.nodes.filter((n) => visibleIds.has(n.id));
-    const layoutEdges = data.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
+    layoutEdges = data.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
     nodes = createSimNodes(layoutNodes, layoutEdges, width, height, config);
     settleLayout(nodes, layoutEdges, width, height, config);
+    captureHomes(nodes);
     view = { x: 0, y: 0, k: 1 };
     buildGraph();
     applyView();
+    startFloat();
   }
 
   applyFilters(true);
   window.addEventListener("resize", relayout);
+  window.addEventListener("pagehide", () => {
+    stopFloat();
+    stopSim();
+  });
 
   const pan = { active: false, startX: 0, startY: 0, originX: 0, originY: 0 };
   panRect.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || nodeDrag.active) return;
     pan.active = true;
     pan.startX = event.clientX;
     pan.startY = event.clientY;
@@ -751,7 +986,7 @@ const payload = JSON.stringify({
   panRect.addEventListener("pointerup", (event) => {
     const moved = Math.hypot(event.clientX - pan.startX, event.clientY - pan.startY) > 6;
     endDrag(event);
-    if (!moved) {
+    if (!moved && !nodeDrag.active) {
       panel.hidden = true;
       selectedId = null;
       applySpotlight();
@@ -790,10 +1025,6 @@ const payload = JSON.stringify({
     fullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
     fullscreenBtn.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
     fullscreenBtn.title = on ? "Exit full screen" : "Full screen";
-    const expand = fullscreenBtn.querySelector<SVGElement>(".icon-expand");
-    const compress = fullscreenBtn.querySelector<SVGElement>(".icon-compress");
-    if (expand) expand.hidden = on;
-    if (compress) compress.hidden = !on;
   }
 
   fullscreenBtn?.addEventListener("click", async () => {
