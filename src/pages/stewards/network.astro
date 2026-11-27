@@ -445,11 +445,9 @@ const payload = JSON.stringify({
   import { NODE_RING } from "../../lib/network-map-config";
   import {
     DEFAULT_PARTICIPANT_MAP_CONFIG,
+    computeLayout,
     applyAmbientFloat,
     captureHomes,
-    createSimNodes,
-    settleLayout,
-    simulateStep,
     curvedPath,
     edgeEndpoints,
     edgeColor,
@@ -510,6 +508,8 @@ const payload = JSON.stringify({
   let floatFrame = 0;
   let simFrame = 0;
   let layoutEdges: MapEdge[] = data.edges;
+  let simulation: ReturnType<typeof computeLayout>["simulation"] | null = null;
+  let hubIds = new Set<string>();
   let filters: FilterState = {
     types: new Set(["steward", "partner"]),
     province: "",
@@ -843,8 +843,9 @@ const payload = JSON.stringify({
           return;
         }
 
-        // Keep isolates where dropped; let connected nodes re-spring into place.
-        if (node.isIsolate) {
+        // Keep isolates and hubs pinned where dropped; let connected nodes re-spring into place.
+        const isHub = hubIds.has(node.id);
+        if (node.isIsolate || isHub) {
           node.homeX = node.x;
           node.homeY = node.y;
           node.fx = node.x;
@@ -906,9 +907,18 @@ const payload = JSON.stringify({
   function reheatSimulation() {
     stopFloat();
     stopSim();
-    let alpha = 0.55;
-    const step = () => {
-      if (alpha <= config.alpha_min) {
+    
+    if (!simulation) return;
+    
+    // Reheat the d3 simulation and animate until it cools
+    simulation.alpha(0.3).restart();
+    
+    const onTick = () => {
+      paintPositions();
+      applySpotlight();
+      
+      if (simulation!.alpha() <= config.alpha_min) {
+        simulation!.stop();
         for (const node of nodes) {
           node.vx = 0;
           node.vy = 0;
@@ -918,13 +928,11 @@ const payload = JSON.stringify({
         startFloat();
         return;
       }
-      simulateStep(nodes, layoutEdges, width, height, alpha, config);
-      alpha *= 1 - config.alpha_decay;
-      paintPositions();
-      applySpotlight();
-      simFrame = requestAnimationFrame(step);
+      
+      simFrame = requestAnimationFrame(onTick);
     };
-    simFrame = requestAnimationFrame(step);
+    
+    simFrame = requestAnimationFrame(onTick);
   }
 
   function relayout() {
@@ -942,9 +950,13 @@ const payload = JSON.stringify({
     panRect.setAttribute("height", String(height));
     const layoutNodes = data.nodes.filter((n) => visibleIds.has(n.id));
     layoutEdges = data.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
-    nodes = createSimNodes(layoutNodes, layoutEdges, width, height, config);
-    settleLayout(nodes, layoutEdges, width, height, config);
-    captureHomes(nodes);
+    
+    // Use computeLayout for d3-force backbone layout
+    const result = computeLayout(layoutNodes, layoutEdges, width, height, config);
+    nodes = result.nodes;
+    simulation = result.simulation;
+    hubIds = result.hubIds;
+    
     view = { x: 0, y: 0, k: 1 };
     buildGraph();
     applyView();
